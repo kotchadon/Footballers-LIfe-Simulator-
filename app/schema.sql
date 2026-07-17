@@ -1,0 +1,87 @@
+CREATE TABLE IF NOT EXISTS careers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    player_name TEXT NOT NULL,
+    nationality TEXT NOT NULL,
+    position TEXT NOT NULL,
+    age INTEGER NOT NULL DEFAULT 16,
+    overall INTEGER NOT NULL DEFAULT 52,
+    potential INTEGER NOT NULL DEFAULT 88,
+    fitness INTEGER NOT NULL DEFAULT 100,
+    morale INTEGER NOT NULL DEFAULT 70,
+    reputation INTEGER NOT NULL DEFAULT 5,
+    money INTEGER NOT NULL DEFAULT 0,
+    current_week INTEGER NOT NULL DEFAULT 1,
+    season_label TEXT NOT NULL DEFAULT '2026/27',
+    club_id INTEGER,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (club_id) REFERENCES clubs(id)
+);
+
+CREATE TABLE IF NOT EXISTS clubs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    short_name TEXT NOT NULL UNIQUE,
+    strength INTEGER NOT NULL,
+    reputation INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS fixtures (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    career_id INTEGER NOT NULL,
+    week INTEGER NOT NULL,
+    home_club_id INTEGER NOT NULL,
+    away_club_id INTEGER NOT NULL,
+    played INTEGER NOT NULL DEFAULT 0,
+    home_goals INTEGER,
+    away_goals INTEGER,
+    FOREIGN KEY (career_id) REFERENCES careers(id) ON DELETE CASCADE,
+    FOREIGN KEY (home_club_id) REFERENCES clubs(id),
+    FOREIGN KEY (away_club_id) REFERENCES clubs(id)
+);
+
+CREATE TABLE IF NOT EXISTS standings (
+    career_id INTEGER NOT NULL,
+    club_id INTEGER NOT NULL,
+    played INTEGER NOT NULL DEFAULT 0,
+    won INTEGER NOT NULL DEFAULT 0,
+    drawn INTEGER NOT NULL DEFAULT 0,
+    lost INTEGER NOT NULL DEFAULT 0,
+    goals_for INTEGER NOT NULL DEFAULT 0,
+    goals_against INTEGER NOT NULL DEFAULT 0,
+    points INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (career_id, club_id),
+    FOREIGN KEY (career_id) REFERENCES careers(id) ON DELETE CASCADE,
+    FOREIGN KEY (club_id) REFERENCES clubs(id)
+);
+
+CREATE TABLE IF NOT EXISTS player_stats (
+    career_id INTEGER PRIMARY KEY,
+    appearances INTEGER NOT NULL DEFAULT 0,
+    starts INTEGER NOT NULL DEFAULT 0,
+    goals INTEGER NOT NULL DEFAULT 0,
+    assists INTEGER NOT NULL DEFAULT 0,
+    yellow_cards INTEGER NOT NULL DEFAULT 0,
+    red_cards INTEGER NOT NULL DEFAULT 0,
+    motm INTEGER NOT NULL DEFAULT 0,
+    rating_total REAL NOT NULL DEFAULT 0,
+    wins INTEGER NOT NULL DEFAULT 0,
+    draws INTEGER NOT NULL DEFAULT 0,
+    losses INTEGER NOT NULL DEFAULT 0,
+    FOREIGN KEY (career_id) REFERENCES careers(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS match_reports (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    career_id INTEGER NOT NULL,
+    week INTEGER NOT NULL,
+    fixture_id INTEGER NOT NULL,
+    player_started INTEGER NOT NULL,
+    player_goals INTEGER NOT NULL DEFAULT 0,
+    player_assists INTEGER NOT NULL DEFAULT 0,
+    player_rating REAL NOT NULL,
+    player_motm INTEGER NOT NULL DEFAULT 0,
+    commentary TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (career_id) REFERENCES careers(id) ON DELETE CASCADE,
+    FOREIGN KEY (fixture_id) REFERENCES fixtures(id)
+);

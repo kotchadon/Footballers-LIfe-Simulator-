@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}New Career{% endblock %}
+{% block content %}
+<section class="panel narrow">
+  <p class="eyebrow">NEW SAVE</p>
+  <h1>Create your player</h1>
+  <form method="post" class="form-grid">
+    <label>Player name<input name="player_name" placeholder="Advay Katoch" required></label>
+    <label>Nationality<input name="nationality" placeholder="India" required></label>
+    <label>Position
+      <select name="position">
+        <option>ST</option><option>LW</option><option>RW</option><option>CAM</option>
+        <option>CM</option><option>CDM</option><option>LB</option><option>RB</option>
+        <option>CB</option><option>GK</option>
+      </select>
+    </label>
+    <button class="button primary" type="submit">Begin career</button>
+  </form>
+</section>
+{% endblock %}

@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}Start — Footy Career{% endblock %}
+{% block content %}
+<section class="hero">
+  <p class="eyebrow">CAREER MODE / 2026</p>
+  <h1>Build a football life from age 16.</h1>
+  <p>Create your player, earn your place, simulate every matchweek and turn a small-club prospect into a world superstar.</p>
+  <a class="button primary" href="{{ url_for('main.new_career') }}">Create career</a>
+</section>
+{% endblock %}

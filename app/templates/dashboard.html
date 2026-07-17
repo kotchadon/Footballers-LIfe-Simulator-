@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}{{ career.player_name }} — Footy Career{% endblock %}
+{% block content %}
+<section class="player-header">
+  <div>
+    <p class="eyebrow">{{ career.season_label }} · WEEK {{ career.current_week }}</p>
+    <h1>{{ career.player_name }}</h1>
+    <p>{{ career.age }} years old · {{ career.nationality }} · {{ career.position }} · {{ career.club_name }}</p>
+  </div>
+  <div class="overall"><span>OVR</span>{{ career.overall }}</div>
+</section>
+
+<section class="metrics">
+  <div><span>Fitness</span><strong>{{ career.fitness }}%</strong></div>
+  <div><span>Morale</span><strong>{{ career.morale }}</strong></div>
+  <div><span>Reputation</span><strong>{{ career.reputation }}</strong></div>
+  <div><span>Goals</span><strong>{{ stats.goals }}</strong></div>
+  <div><span>Assists</span><strong>{{ stats.assists }}</strong></div>
+  <div><span>Avg rating</span><strong>{{ stats.average_rating }}</strong></div>
+</section>
+
+<div class="layout">
+  <section class="panel">
+    <p class="eyebrow">NEXT MATCH</p>
+    {% if fixture %}
+      <h2>{{ fixture.home_name }} <span class="muted">vs</span> {{ fixture.away_name }}</h2>
+      <p>League · Matchweek {{ fixture.week }}</p>
+      <div class="actions">
+        <form method="post" action="{{ url_for('main.play') }}"><button class="button primary">Play matchweek</button></form>
+        <form method="post" action="{{ url_for('main.recover') }}"><button class="button secondary">Recovery session</button></form>
+      </div>
+    {% else %}
+      <h2>Season complete</h2>
+      <p>Next build: awards, promotion, transfers and season rollover.</p>
+    {% endif %}
+  </section>
+
+  <section class="panel">
+    <p class="eyebrow">CAREER TOTALS</p>
+    <div class="stat-lines">
+      <p><span>Appearances</span><strong>{{ stats.appearances }}</strong></p>
+      <p><span>Wins / Draws / Losses</span><strong>{{ stats.wins }} / {{ stats.draws }} / {{ stats.losses }}</strong></p>
+      <p><span>Player of the Match</span><strong>{{ stats.motm }}</strong></p>
+    </div>
+  </section>
+</div>
+
+<section class="panel">
+  <p class="eyebrow">LEAGUE TABLE</p>
+  <div class="table-wrap"><table>
+    <thead><tr><th>#</th><th>Club</th><th>P</th><th>W</th><th>D</th><th>L</th><th>GD</th><th>PTS</th></tr></thead>
+    <tbody>
+      {% for row in standings %}
+      <tr class="{% if row.club_id == career.club_id %}highlight{% endif %}">
+        <td>{{ loop.index }}</td><td>{{ row.name }}</td><td>{{ row.played }}</td><td>{{ row.won }}</td>
+        <td>{{ row.drawn }}</td><td>{{ row.lost }}</td><td>{{ row.goal_difference }}</td><td><strong>{{ row.points }}</strong></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table></div>
+</section>
+
+<section class="panel">
+  <p class="eyebrow">RECENT MATCHES</p>
+  {% if reports %}
+    <div class="report-list">
+    {% for report in reports %}
+      <article>
+        <strong>{{ report.home_name }} {{ report.home_goals }}–{{ report.away_goals }} {{ report.away_name }}</strong>
+        <span>{% if report.player_started %}Rating {{ report.player_rating }} · {{ report.player_goals }}G {{ report.player_assists }}A{% else %}Not selected{% endif %}</span>
+      </article>
+    {% endfor %}
+    </div>
+  {% else %}<p class="muted">No matches played yet.</p>{% endif %}
+</section>
+{% endblock %}

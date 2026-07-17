@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}Matchweek Result{% endblock %}
+{% block content %}
+<section class="score-card">
+  <p class="eyebrow">FULL TIME</p>
+  <div class="scoreline">
+    <span>{{ report.home_name }}</span>
+    <strong>{{ report.home_goals }}–{{ report.away_goals }}</strong>
+    <span>{{ report.away_name }}</span>
+  </div>
+  {% if report.started %}
+    <div class="metrics compact">
+      <div><span>Goals</span><strong>{{ report.goals }}</strong></div>
+      <div><span>Assists</span><strong>{{ report.assists }}</strong></div>
+      <div><span>Rating</span><strong>{{ report.rating }}</strong></div>
+      <div><span>Award</span><strong>{% if report.motm %}MOTM{% else %}—{% endif %}</strong></div>
+    </div>
+  {% else %}<p>You were not selected for the starting XI.</p>{% endif %}
+</section>
+
+<div class="layout">
+  <section class="panel">
+    <p class="eyebrow">COMMENTARY</p>
+    <pre class="commentary">{{ report.commentary }}</pre>
+  </section>
+  <section class="panel">
+    <p class="eyebrow">OTHER RESULTS</p>
+    {% for result in results %}
+      <p class="result-row"><span>{{ result.home_name }}</span><strong>{{ result.home_goals }}–{{ result.away_goals }}</strong><span>{{ result.away_name }}</span></p>
+    {% endfor %}
+  </section>
+</div>
+<a class="button primary" href="{{ url_for('main.index') }}">Continue</a>
+{% endblock %}
