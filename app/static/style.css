@@ -340,3 +340,53 @@ input, select { width: 100%; padding: 13px; color: var(--ink); background: var(-
   .report-list span { text-align: left; }
 }
 
+/* V4: sealed replay and evidence-based reporting */
+.report-lock {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  border: 1px dashed rgba(16, 33, 59, .28);
+  background: repeating-linear-gradient(135deg, rgba(16, 33, 59, .025), rgba(16, 33, 59, .025) 10px, transparent 10px, transparent 20px);
+}
+.report-lock[hidden], .post-match-report[hidden] { display: none !important; }
+.lock-icon {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--ink);
+  color: white;
+  font-size: 1.5rem;
+  font-weight: 950;
+  box-shadow: inset 0 0 0 5px rgba(255,255,255,.12);
+}
+.post-match-report { display: grid; gap: 20px; margin-top: 20px; }
+.report-hero { display: flex; justify-content: space-between; gap: 24px; align-items: center; }
+.report-hero h2 { margin: 4px 0 8px; font-size: clamp(1.7rem, 3vw, 2.8rem); }
+.report-rating { min-width: 112px; aspect-ratio: 1; display: grid; place-items: center; align-content: center; background: var(--orange); color: var(--ink); clip-path: polygon(12% 0, 88% 0, 100% 18%, 94% 88%, 50% 100%, 6% 88%, 0 18%); }
+.report-rating small { font-weight: 900; letter-spacing: .12em; }
+.report-rating strong { font-size: 2.4rem; line-height: 1; }
+.report-grid { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(320px, .75fr); gap: 20px; }
+.report-grid.three-column { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.report-list { display: grid; gap: 12px; }
+.analysis-item { position: relative; padding: 14px 14px 14px 16px; border-left: 4px solid var(--orange); background: rgba(16, 33, 59, .035); }
+.analysis-item h3 { margin: 0 0 5px; font-size: 1rem; }
+.analysis-item p { margin: 0; line-height: 1.55; }
+.analysis-item small { display: block; margin-top: 8px; color: var(--muted); font-weight: 750; }
+.analysis-item.compact { display: grid; grid-template-columns: 48px 1fr; align-items: start; }
+.analysis-item.compact h3 { color: var(--orange-dark); }
+.analysis-focus { display: inline-block; margin-top: 10px; padding: 4px 8px; background: var(--ink); color: #fff; font-size: .7rem; font-weight: 900; letter-spacing: .08em; }
+.briefing-lines { display: grid; gap: 8px; margin: 18px 0; }
+.briefing-lines p { display: flex; justify-content: space-between; gap: 16px; margin: 0; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+.active-match-notice { margin-bottom: 18px; padding: 12px 14px; border-left: 4px solid var(--orange); background: rgba(241, 117, 45, .08); font-weight: 750; }
+.timeline-event.goal_for p { color: #0c6d44; font-weight: 900; }
+.timeline-event.goal_against p, .timeline-event.red_card p { color: var(--red); font-weight: 900; }
+.timeline-event.player_key_pass p, .timeline-event.player_dribble p, .timeline-event.player_tackle p { color: #24578f; font-weight: 800; }
+.timeline-event.player_turnover p, .timeline-event.yellow_card p, .timeline-event.injury p { color: #8a4f00; font-weight: 800; }
+@media (max-width: 980px) {
+  .report-grid, .report-grid.three-column { grid-template-columns: 1fr; }
+  .report-hero { align-items: flex-start; }
+  .report-rating { min-width: 88px; }
+}
+

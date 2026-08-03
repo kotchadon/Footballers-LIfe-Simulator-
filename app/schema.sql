@@ -138,9 +138,35 @@ CREATE TABLE IF NOT EXISTS match_reports (
     development_summary TEXT NOT NULL DEFAULT '',
     fitness_before INTEGER NOT NULL DEFAULT 100,
     fitness_after INTEGER NOT NULL DEFAULT 100,
+    session_id INTEGER,
+    events_json TEXT NOT NULL DEFAULT '[]',
+    metrics_json TEXT NOT NULL DEFAULT '{}',
+    analysis_json TEXT NOT NULL DEFAULT '{}',
+    finalized_at TEXT,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (career_id) REFERENCES careers(id) ON DELETE CASCADE,
     FOREIGN KEY (fixture_id) REFERENCES fixtures(id)
+);
+
+
+CREATE TABLE IF NOT EXISTS match_sessions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    public_id TEXT NOT NULL UNIQUE,
+    career_id INTEGER NOT NULL,
+    season_number INTEGER NOT NULL,
+    week INTEGER NOT NULL,
+    player_fixture_id INTEGER NOT NULL,
+    seed INTEGER NOT NULL,
+    status TEXT NOT NULL DEFAULT 'prepared' CHECK(status IN ('prepared', 'completed', 'void')),
+    revealed_event_count INTEGER NOT NULL DEFAULT 0,
+    event_count INTEGER NOT NULL,
+    simulation_json TEXT NOT NULL,
+    report_json TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    completed_at TEXT,
+    UNIQUE(career_id, season_number, week),
+    FOREIGN KEY (career_id) REFERENCES careers(id) ON DELETE CASCADE,
+    FOREIGN KEY (player_fixture_id) REFERENCES fixtures(id)
 );
 
 CREATE TABLE IF NOT EXISTS season_history (

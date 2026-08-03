@@ -3,11 +3,15 @@
 {% block page_id %}match{% endblock %}
 {% block content %}
 <section class="match-stage" id="match-stage"
-  data-player-team-home="{{ 'true' if report.player_team_is_home else 'false' }}"
-  data-final-home="{{ report.home_goals }}" data-final-away="{{ report.away_goals }}">
+  data-session-id="{{ session.public_id }}"
+  data-session-status="{{ session.status }}"
+  data-event-count="{{ session.event_count }}"
+  data-player-team-home="{{ 'true' if session.player_team_is_home else 'false' }}"
+  data-advance-endpoint="{{ url_for('main.advance_match_api', session_id=session.public_id) }}"
+  data-complete-endpoint="{{ url_for('main.complete_match_api', session_id=session.public_id) }}">
   <div class="match-stage-top">
-    <span class="live-badge"><i></i> MATCH REPLAY</span>
-    <div class="match-clock"><strong id="match-minute">00'</strong><span id="match-status">Playing</span></div>
+    <span class="live-badge"><i></i> SEALED MATCH REPLAY</span>
+    <div class="match-clock"><strong id="match-minute">00'</strong><span id="match-status">Preparing</span></div>
     <div class="speed-controls" aria-label="Replay speed">
       <button type="button" data-match-speed="1" class="active">1×</button>
       <button type="button" data-match-speed="2">2×</button>
@@ -16,9 +20,9 @@
   </div>
 
   <div class="stadium-scoreboard">
-    <div class="team-side"><span class="club-monogram">{{ report.home_name[:2]|upper }}</span><h1>{{ report.home_name }}</h1></div>
-    <div class="score-centre"><strong><span id="home-live-score">0</span><b>–</b><span id="away-live-score">0</span></strong><small>FULL RESULT {{ report.home_goals }}–{{ report.away_goals }}</small></div>
-    <div class="team-side away"><span class="club-monogram">{{ report.away_name[:2]|upper }}</span><h1>{{ report.away_name }}</h1></div>
+    <div class="team-side"><span class="club-monogram">{{ session.home_name[:2]|upper }}</span><h1>{{ session.home_name }}</h1></div>
+    <div class="score-centre"><strong><span id="home-live-score">0</span><b>–</b><span id="away-live-score">0</span></strong><small id="score-caption">LIVE SCORE</small></div>
+    <div class="team-side away"><span class="club-monogram">{{ session.away_name[:2]|upper }}</span><h1>{{ session.away_name }}</h1></div>
   </div>
 
   <div class="match-controls">
@@ -27,38 +31,34 @@
   </div>
 </section>
 
-<script id="match-events" type="application/json">{{ report.events|tojson }}</script>
-
 <div class="match-layout">
   <section class="panel commentary-panel">
-    <div class="panel-heading"><div><p class="eyebrow">LIVE COMMENTARY</p><h2>The match as it unfolds</h2></div><span class="event-count" id="event-count">0 / {{ report.events|length }}</span></div>
+    <div class="panel-heading"><div><p class="eyebrow">LIVE COMMENTARY</p><h2>The event ledger</h2></div><span class="event-count" id="event-count">0 / {{ session.event_count }}</span></div>
     <div class="timeline" id="match-timeline" aria-live="polite"></div>
   </section>
 
-  <aside class="panel player-match-card">
-    <p class="eyebrow">PLAYER REPORT</p>
-    <h2>{{ career.player_name }}</h2>
-    <span class="selection-label">{{ report.selection_status|upper }}</span>
-    {% if report.selection_status in ['starter', 'substitute'] %}
-    <div class="match-stat-grid">
-      <div><span>Minutes</span><strong>{{ report.minutes }}</strong></div><div><span>Goals</span><strong>{{ report.goals }}</strong></div>
-      <div><span>Assists</span><strong>{{ report.assists }}</strong></div><div><span>Rating</span><strong>{{ report.rating }}</strong></div>
-      <div><span>Cards</span><strong>{{ report.yellow_cards }}Y / {{ report.red_cards }}R</strong></div><div><span>Award</span><strong>{% if report.motm %}MOTM{% else %}—{% endif %}</strong></div>
+  <aside class="panel player-match-card" id="player-briefing">
+    <p class="eyebrow">MATCH BRIEFING</p>
+    <h2>{{ session.player_name }}</h2>
+    <span class="selection-label">{{ session.selection_status|upper }}</span>
+    <div class="briefing-lines">
+      <p><span>Position</span><strong>{{ session.position }}</strong></p>
+      <p><span>Competition</span><strong>League · Week {{ session.week }}</strong></p>
+      <p><span>Replay integrity</span><strong>Result sealed</strong></p>
     </div>
-    {% else %}<p class="muted">You did not enter the pitch this match.</p>{% endif %}
-    <div class="fitness-shift"><span>Fitness</span><strong>{{ report.fitness_before }}% → {{ report.fitness_after }}%</strong></div>
-    <div class="development-note"><span>DEVELOPMENT</span><p>{{ report.development_summary }}</p></div>
-    {% if report.injured %}<p class="danger-text">You suffered an injury. Recovery time will appear on the dashboard.</p>{% endif %}
+    <p class="muted">Final score, rating, development, rewards and analysis stay locked until full time.</p>
   </aside>
 </div>
 
-<section class="panel results-strip">
-  <div class="panel-heading"><div><p class="eyebrow">MATCHWEEK</p><h2>Other results</h2></div></div>
-  <div class="other-results">
-    {% for result in results %}<p class="result-row"><span>{{ result.home_name }}</span><strong>{{ result.home_goals }}–{{ result.away_goals }}</strong><span>{{ result.away_name }}</span></p>{% endfor %}
+<section class="panel report-lock" id="report-lock">
+  <div class="lock-icon">90</div>
+  <div>
+    <p class="eyebrow">POST-MATCH INTELLIGENCE</p>
+    <h2>Report locked until full time</h2>
+    <p>No final score, rating, rewards, development outcome or analysis exists in this page markup. The server releases the report only after the match is completed.</p>
   </div>
 </section>
 
-<a class="button primary continue-button" href="{{ url_for('main.index') }}">Return to dashboard</a>
+<div id="post-match-mount" aria-live="polite"></div>
 {% endblock %}
 

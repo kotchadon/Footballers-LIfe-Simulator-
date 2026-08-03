@@ -35,6 +35,11 @@ MATCH_REPORT_COLUMNS = {
     "development_summary": "TEXT NOT NULL DEFAULT ''",
     "fitness_before": "INTEGER NOT NULL DEFAULT 100",
     "fitness_after": "INTEGER NOT NULL DEFAULT 100",
+    "session_id": "INTEGER",
+    "events_json": "TEXT NOT NULL DEFAULT '[]'",
+    "metrics_json": "TEXT NOT NULL DEFAULT '{}'",
+    "analysis_json": "TEXT NOT NULL DEFAULT '{}'",
+    "finalized_at": "TEXT",
 }
 
 
@@ -147,6 +152,12 @@ def migrate_existing_save(db):
     )
     db.execute(
         "CREATE INDEX IF NOT EXISTS idx_reports_career_season ON match_reports(career_id, season_number)"
+    )
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_match_sessions_career_status ON match_sessions(career_id, status)"
+    )
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_match_sessions_public_id ON match_sessions(public_id)"
     )
     db.commit()
 

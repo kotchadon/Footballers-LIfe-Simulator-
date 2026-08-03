@@ -11,6 +11,7 @@ def create_app(test_config=None):
     app.config.from_mapping(
         SECRET_KEY="dev-change-me",
         DATABASE=str(Path(app.instance_path) / "footy.sqlite3"),
+        SEND_FILE_MAX_AGE_DEFAULT=0,
     )
 
     if test_config:
@@ -24,3 +25,4 @@ def create_app(test_config=None):
         init_db()
 
     return app
+

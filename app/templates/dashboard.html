@@ -40,7 +40,7 @@
       </div>
       <p class="muted">League · Matchweek {{ fixture.week }}</p>
       <form id="play-form" method="post" action="{{ url_for('main.play') }}">
-        <button class="button primary wide" type="submit">Enter match centre <kbd>C</kbd></button>
+        <button class="button primary wide" type="submit">{% if active_match %}Resume sealed match{% else %}Enter match centre{% endif %} <kbd>C</kbd></button>
       </form>
     {% elif season_complete %}
       <h2>Season complete</h2>
@@ -66,6 +66,7 @@
 </div>
 
 <section class="panel development-panel" id="development" data-training-endpoint="{{ url_for('main.training_plan_api') }}">
+  {% if active_match %}<div class="active-match-notice">Training is locked because Matchweek {{ career.current_week }} has a sealed simulation in progress. Resume or skip that match first.</div>{% endif %}
   <div class="panel-heading">
     <div>
       <p class="eyebrow">DEVELOPMENT PLAN</p>
@@ -86,12 +87,12 @@
           ('defending','DEF',career.defending,'5'),
           ('physical','PHY',career.physical,'6')
         ] %}
-        <button type="button" class="attribute-card {% if training_plan.focus == focus %}selected{% endif %}" data-training-focus="{{ focus }}" data-shortcut="{{ key }}">
+        <button type="button" class="attribute-card {% if training_plan.focus == focus %}selected{% endif %}" data-training-focus="{{ focus }}" data-shortcut="{{ key }}" {% if active_match %}disabled title="Finish the active match first"{% endif %}>
           <span>{{ short }}</span><strong>{{ value }}</strong><small>{{ key }} · Focus</small>
         </button>
         {% endfor %}
       </div>
-      <button type="button" class="recovery-card {% if training_plan.focus == 'recovery' %}selected{% endif %}" data-training-focus="recovery" data-shortcut="R">
+      <button type="button" class="recovery-card {% if training_plan.focus == 'recovery' %}selected{% endif %}" data-training-focus="recovery" data-shortcut="R" {% if active_match %}disabled title="Finish the active match first"{% endif %}>
         <span><b>Recovery week</b><small>Extra automatic recovery, no training XP</small></span><kbd>R</kbd>
       </button>
     </div>
