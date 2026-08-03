@@ -6,3 +6,4 @@ __pycache__/
 instance/
 *.sqlite3
 .env
+.upgrade-backups/

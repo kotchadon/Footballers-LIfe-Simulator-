@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}Career History — {{ career.player_name }}{% endblock %}
+{% block content %}
+<section class="player-header compact-header">
+  <div>
+    <p class="eyebrow">CAREER ARCHIVE</p>
+    <h1>{{ career.player_name }}</h1>
+    <p>{{ career.age }} years old · {{ career.club_name }} · {{ career.position }}</p>
+  </div>
+  <div class="overall"><span>OVR</span>{{ career.overall }}</div>
+</section>
+
+<section class="metrics">
+  <div><span>Appearances</span><strong>{{ stats.appearances }}</strong></div>
+  <div><span>Goals</span><strong>{{ stats.goals }}</strong></div>
+  <div><span>Assists</span><strong>{{ stats.assists }}</strong></div>
+  <div><span>Average rating</span><strong>{{ stats.average_rating }}</strong></div>
+  <div><span>MOTM</span><strong>{{ stats.motm }}</strong></div>
+  <div><span>Career earnings</span><strong>${{ "{:,}".format(career.money) }}</strong></div>
+</section>
+
+<section class="panel">
+  <p class="eyebrow">SEASON HISTORY</p>
+  {% if seasons %}
+  <div class="table-wrap"><table>
+    <thead><tr><th>Season</th><th>Club</th><th>League finish</th><th>Apps</th><th>Goals</th><th>Assists</th><th>Rating</th><th>Awards</th></tr></thead>
+    <tbody>
+      {% for season in seasons %}
+      <tr><td>{{ season.season_label }}</td><td>{{ season.club_name }}</td><td>#{{ season.league_position }} · {{ season.league_points }} pts</td><td>{{ season.appearances }}</td><td>{{ season.goals }}</td><td>{{ season.assists }}</td><td>{{ season.average_rating }}</td><td>{{ season.awards or '—' }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}<p class="muted">Complete your first season to create the archive.</p>{% endif %}
+</section>
+
+<div class="layout">
+  <section class="panel">
+    <p class="eyebrow">CLUB HISTORY</p>
+    <div class="report-list">
+    {% for club in clubs %}
+      <article><strong>{{ club.club_name }}</strong><span>Joined season {{ club.joined_season }}{% if club.left_season %} · Left season {{ club.left_season }}{% endif %} · {{ club.reason }}</span></article>
+    {% endfor %}
+    </div>
+  </section>
+
+  <section class="panel">
+    <p class="eyebrow">RECENT FINANCES</p>
+    <div class="report-list">
+    {% for item in finances %}
+      <article><strong>{{ item.category }}</strong><span class="money-positive">+${{ "{:,}".format(item.amount) }}</span><small>{{ item.description }}</small></article>
+    {% else %}<p class="muted">No transactions yet.</p>{% endfor %}
+    </div>
+  </section>
+</div>
+{% endblock %}

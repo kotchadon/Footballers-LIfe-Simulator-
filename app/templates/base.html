@@ -3,19 +3,54 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#15233f">
   <title>{% block title %}Footy Career{% endblock %}</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <script defer src="{{ url_for('static', filename='app.js') }}"></script>
 </head>
-<body>
-  <header class="topbar">
-    <a class="brand" href="{{ url_for('main.index') }}">FOOTY CAREER</a>
-    <span class="tag">Local career simulator</span>
-  </header>
-  <main class="container">
-    {% with messages = get_flashed_messages() %}
-      {% for message in messages %}<div class="flash">{{ message }}</div>{% endfor %}
-    {% endwith %}
-    {% block content %}{% endblock %}
-  </main>
+<body data-page="{% block page_id %}default{% endblock %}">
+  <div class="page-shell">
+    <header class="topbar">
+      <a class="brand" href="{{ url_for('main.index') }}">
+        <span class="brand-ball">FC</span>
+        <span><strong>FOOTY</strong><small>CAREER LAB</small></span>
+      </a>
+      <nav class="nav-links" aria-label="Main navigation">
+        <a href="{{ url_for('main.index') }}" data-shortcut-label="H">Dashboard</a>
+        <a href="{{ url_for('main.career_history') }}" data-shortcut-label="Y">Career history</a>
+      </nav>
+      <button class="shortcut-button" type="button" data-open-shortcuts aria-label="Open keyboard shortcuts">
+        <kbd>?</kbd><span>Shortcuts</span>
+      </button>
+    </header>
+
+    <main class="container">
+      {% with messages = get_flashed_messages() %}
+        {% for message in messages %}<div class="flash" role="status">{{ message }}</div>{% endfor %}
+      {% endwith %}
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <dialog class="shortcut-dialog" id="shortcut-dialog">
+    <div class="dialog-head">
+      <div><p class="eyebrow">KEYBOARD CONTROL</p><h2>Play without hunting for buttons</h2></div>
+      <button type="button" class="icon-button" data-close-shortcuts aria-label="Close">×</button>
+    </div>
+    <div class="shortcut-grid">
+      <div><kbd>1–6</kbd><span>Choose attribute focus</span></div>
+      <div><kbd>R</kbd><span>Recovery week</span></div>
+      <div><kbd>C</kbd><span>Continue to next match</span></div>
+      <div><kbd>H</kbd><span>Dashboard</span></div>
+      <div><kbd>Y</kbd><span>Career history</span></div>
+      <div><kbd>?</kbd><span>Open this guide</span></div>
+      <div><kbd>Space</kbd><span>Pause match replay</span></div>
+      <div><kbd>1 / 2 / 3</kbd><span>Replay speed</span></div>
+      <div><kbd>Enter</kbd><span>Skip to full time</span></div>
+    </div>
+  </dialog>
 </body>
 </html>
+

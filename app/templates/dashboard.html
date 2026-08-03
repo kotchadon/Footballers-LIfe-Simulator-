@@ -1,76 +1,169 @@
 {% extends "base.html" %}
 {% block title %}{{ career.player_name }} — Footy Career{% endblock %}
+{% block page_id %}dashboard{% endblock %}
 {% block content %}
-<section class="player-header">
-  <div>
-    <p class="eyebrow">{{ career.season_label }} · WEEK {{ career.current_week }}</p>
+<section class="player-hero">
+  <div class="player-identity">
+    <p class="eyebrow">{{ career.season_label }} · SEASON {{ career.season_number }} · MATCHWEEK {{ career.current_week }}</p>
     <h1>{{ career.player_name }}</h1>
-    <p>{{ career.age }} years old · {{ career.nationality }} · {{ career.position }} · {{ career.club_name }}</p>
+    <p class="hero-subtitle">{{ career.age }} years old · {{ career.nationality }} · {{ career.position }} · {{ career.club_name }}</p>
+    <div class="status-pills">
+      {% if career.injured_weeks > 0 %}<span class="pill danger">Injured · {{ career.injured_weeks }} week(s)</span>{% endif %}
+      {% if career.suspended_matches > 0 %}<span class="pill warning">Suspended · {{ career.suspended_matches }} match(es)</span>{% endif %}
+      <span class="pill focus-pill" id="hero-training-pill">Plan · {{ training_plan.label }}</span>
+    </div>
   </div>
-  <div class="overall"><span>OVR</span>{{ career.overall }}</div>
+  <div class="player-card-mark">
+    <span class="shirt-number">{{ career.overall }}</span>
+    <small>OVERALL</small>
+    <b>POT {{ career.potential }}</b>
+  </div>
 </section>
 
-<section class="metrics">
-  <div><span>Fitness</span><strong>{{ career.fitness }}%</strong></div>
+<section class="metrics metrics-ticket">
+  <div><span>Fitness</span><strong id="fitness-value">{{ career.fitness }}%</strong></div>
   <div><span>Morale</span><strong>{{ career.morale }}</strong></div>
   <div><span>Reputation</span><strong>{{ career.reputation }}</strong></div>
-  <div><span>Goals</span><strong>{{ stats.goals }}</strong></div>
-  <div><span>Assists</span><strong>{{ stats.assists }}</strong></div>
-  <div><span>Avg rating</span><strong>{{ stats.average_rating }}</strong></div>
+  <div><span>Money</span><strong>${{ "{:,}".format(career.money) }}</strong></div>
+  <div><span>Weekly wage</span><strong>${{ "{:,}".format(career.wage) }}</strong></div>
+  <div><span>Development</span><strong id="xp-value">{{ career.xp }}/100</strong></div>
 </section>
 
-<div class="layout">
-  <section class="panel">
-    <p class="eyebrow">NEXT MATCH</p>
+<div class="dashboard-grid top-grid">
+  <section class="panel next-match-panel">
+    <div class="panel-heading"><div><p class="eyebrow">NEXT FIXTURE</p><h2>Matchday briefing</h2></div><span class="shortcut-chip">C</span></div>
     {% if fixture %}
-      <h2>{{ fixture.home_name }} <span class="muted">vs</span> {{ fixture.away_name }}</h2>
-      <p>League · Matchweek {{ fixture.week }}</p>
-      <div class="actions">
-        <form method="post" action="{{ url_for('main.play') }}"><button class="button primary">Play matchweek</button></form>
-        <form method="post" action="{{ url_for('main.recover') }}"><button class="button secondary">Recovery session</button></form>
+      <div class="fixture-board">
+        <span>{{ fixture.home_name }}</span>
+        <b>VS</b>
+        <span>{{ fixture.away_name }}</span>
       </div>
-    {% else %}
+      <p class="muted">League · Matchweek {{ fixture.week }}</p>
+      <form id="play-form" method="post" action="{{ url_for('main.play') }}">
+        <button class="button primary wide" type="submit">Enter match centre <kbd>C</kbd></button>
+      </form>
+    {% elif season_complete %}
       <h2>Season complete</h2>
-      <p>Next build: awards, promotion, transfers and season rollover.</p>
+      <p>Lock in your final position, awards and prize money. Your player will age and the next season will be generated.</p>
+      <form method="post" action="{{ url_for('main.end_season') }}">
+        <button class="button primary">Finalise season</button>
+      </form>
+    {% else %}
+      <h2>No fixture available</h2><p>The current season data needs checking.</p>
     {% endif %}
   </section>
 
-  <section class="panel">
-    <p class="eyebrow">CAREER TOTALS</p>
-    <div class="stat-lines">
-      <p><span>Appearances</span><strong>{{ stats.appearances }}</strong></p>
-      <p><span>Wins / Draws / Losses</span><strong>{{ stats.wins }} / {{ stats.draws }} / {{ stats.losses }}</strong></p>
-      <p><span>Player of the Match</span><strong>{{ stats.motm }}</strong></p>
+  <section class="panel season-panel">
+    <p class="eyebrow">CURRENT SEASON</p>
+    <div class="season-scoreline"><strong>{{ season_stats.goals }}</strong><span>GOALS</span><strong>{{ season_stats.assists }}</strong><span>ASSISTS</span></div>
+    <div class="stat-lines compact-lines">
+      <p><span>Appearances</span><strong>{{ season_stats.appearances }} ({{ season_stats.starts }} starts)</strong></p>
+      <p><span>Minutes</span><strong>{{ season_stats.minutes }}</strong></p>
+      <p><span>Average rating</span><strong>{{ season_stats.average_rating }}</strong></p>
+      <p><span>Cards</span><strong>{{ season_stats.yellow_cards }}Y / {{ season_stats.red_cards }}R</strong></p>
     </div>
   </section>
 </div>
 
-<section class="panel">
-  <p class="eyebrow">LEAGUE TABLE</p>
+<section class="panel development-panel" id="development" data-training-endpoint="{{ url_for('main.training_plan_api') }}">
+  <div class="panel-heading">
+    <div>
+      <p class="eyebrow">DEVELOPMENT PLAN</p>
+      <h2>Choose the work. Growth happens over weeks.</h2>
+      <p class="muted">Changing focus is free. Training no longer instantly adds +1 or drains fitness. XP is earned automatically after each matchweek; every 100 XP creates an attribute improvement.</p>
+    </div>
+    <div class="plan-badge"><small>CURRENT PLAN</small><strong id="training-plan-label">{{ training_plan.label }}</strong></div>
+  </div>
+
+  <div class="development-layout">
+    <div>
+      <div class="attribute-grid">
+        {% for focus, short, value, key in [
+          ('pace','PAC',career.pace,'1'),
+          ('shooting','SHO',career.shooting,'2'),
+          ('passing','PAS',career.passing,'3'),
+          ('dribbling','DRI',career.dribbling,'4'),
+          ('defending','DEF',career.defending,'5'),
+          ('physical','PHY',career.physical,'6')
+        ] %}
+        <button type="button" class="attribute-card {% if training_plan.focus == focus %}selected{% endif %}" data-training-focus="{{ focus }}" data-shortcut="{{ key }}">
+          <span>{{ short }}</span><strong>{{ value }}</strong><small>{{ key }} · Focus</small>
+        </button>
+        {% endfor %}
+      </div>
+      <button type="button" class="recovery-card {% if training_plan.focus == 'recovery' %}selected{% endif %}" data-training-focus="recovery" data-shortcut="R">
+        <span><b>Recovery week</b><small>Extra automatic recovery, no training XP</small></span><kbd>R</kbd>
+      </button>
+    </div>
+
+    <aside class="plan-console">
+      <p class="eyebrow">WEEKLY PLAN</p>
+      <h3 id="training-plan-title">{{ training_plan.label }}</h3>
+      <p id="training-plan-description">{{ training_plan.description }}</p>
+      <div class="xp-track" aria-label="Development progress">
+        <span id="xp-track-fill" style="width: {{ training_plan.xp }}%"></span>
+      </div>
+      <div class="xp-row"><span>Next breakthrough</span><strong id="xp-progress">{{ training_plan.xp }}/100 XP</strong></div>
+      <p class="microcopy">Focused plans guide the next attribute upgrade most of the time; they do not guarantee every breakthrough.</p>
+    </aside>
+  </div>
+</section>
+
+{% if offers %}
+<section class="panel transfer-panel">
+  <p class="eyebrow">TRANSFER OFFERS</p><h2>Your performances have attracted interest.</h2>
+  <div class="offer-grid">
+    {% for offer in offers %}
+    <article class="offer-card">
+      <p class="muted">Offer from</p><h3>{{ offer.to_name }}</h3>
+      <p>Club strength {{ offer.to_strength }} · Reputation {{ offer.to_reputation }}</p>
+      <div class="offer-money"><strong>${{ "{:,}".format(offer.wage) }}/week</strong><span>${{ "{:,}".format(offer.signing_bonus) }} signing bonus</span></div>
+      <div class="actions">
+        <form method="post" action="{{ url_for('main.accept_transfer', offer_id=offer.id) }}"><button class="button primary">Accept</button></form>
+        <form method="post" action="{{ url_for('main.decline_transfer', offer_id=offer.id) }}"><button class="button secondary">Decline</button></form>
+      </div>
+    </article>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+<section class="panel table-panel">
+  <div class="panel-heading"><div><p class="eyebrow">LEAGUE TABLE</p><h2>Season position</h2></div><span class="league-mark">ENG 1</span></div>
   <div class="table-wrap"><table>
-    <thead><tr><th>#</th><th>Club</th><th>P</th><th>W</th><th>D</th><th>L</th><th>GD</th><th>PTS</th></tr></thead>
+    <thead><tr><th>#</th><th>Club</th><th>P</th><th>W</th><th>D</th><th>L</th><th>GF</th><th>GA</th><th>GD</th><th>PTS</th></tr></thead>
     <tbody>
       {% for row in standings %}
       <tr class="{% if row.club_id == career.club_id %}highlight{% endif %}">
-        <td>{{ loop.index }}</td><td>{{ row.name }}</td><td>{{ row.played }}</td><td>{{ row.won }}</td>
-        <td>{{ row.drawn }}</td><td>{{ row.lost }}</td><td>{{ row.goal_difference }}</td><td><strong>{{ row.points }}</strong></td>
+        <td>{{ loop.index }}</td><td>{{ row.name }}</td><td>{{ row.played }}</td><td>{{ row.won }}</td><td>{{ row.drawn }}</td><td>{{ row.lost }}</td><td>{{ row.goals_for }}</td><td>{{ row.goals_against }}</td><td>{{ row.goal_difference }}</td><td><strong>{{ row.points }}</strong></td>
       </tr>
       {% endfor %}
     </tbody>
   </table></div>
 </section>
 
-<section class="panel">
-  <p class="eyebrow">RECENT MATCHES</p>
-  {% if reports %}
-    <div class="report-list">
-    {% for report in reports %}
-      <article>
-        <strong>{{ report.home_name }} {{ report.home_goals }}–{{ report.away_goals }} {{ report.away_name }}</strong>
-        <span>{% if report.player_started %}Rating {{ report.player_rating }} · {{ report.player_goals }}G {{ report.player_assists }}A{% else %}Not selected{% endif %}</span>
+<div class="dashboard-grid">
+  <section class="panel">
+    <p class="eyebrow">RECENT MATCHES</p>
+    {% if reports %}<div class="report-list">
+      {% for report in reports %}
+      <article><strong>{{ report.home_name }} {{ report.home_goals }}–{{ report.away_goals }} {{ report.away_name }}</strong>
+        <span>{% if report.selection_status in ['starter','substitute'] %}{{ report.selection_status|title }} · {{ report.player_minutes }} min · {{ report.player_rating }} · {{ report.player_goals }}G {{ report.player_assists }}A{% else %}{{ report.selection_status|title }}{% endif %}</span>
       </article>
-    {% endfor %}
+      {% endfor %}
+    </div>{% else %}<p class="muted">No matches played yet.</p>{% endif %}
+  </section>
+  <section class="panel">
+    <p class="eyebrow">CAREER TOTALS</p>
+    <div class="stat-lines">
+      <p><span>Appearances</span><strong>{{ stats.appearances }}</strong></p>
+      <p><span>Starts / sub appearances</span><strong>{{ stats.starts }} / {{ stats.sub_appearances }}</strong></p>
+      <p><span>Goals / assists</span><strong>{{ stats.goals }} / {{ stats.assists }}</strong></p>
+      <p><span>Wins / draws / losses</span><strong>{{ stats.wins }} / {{ stats.draws }} / {{ stats.losses }}</strong></p>
+      <p><span>Average rating</span><strong>{{ stats.average_rating }}</strong></p>
     </div>
-  {% else %}<p class="muted">No matches played yet.</p>{% endif %}
-</section>
+    <a class="text-link" href="{{ url_for('main.career_history') }}">Open complete career history →</a>
+  </section>
+</div>
 {% endblock %}
+

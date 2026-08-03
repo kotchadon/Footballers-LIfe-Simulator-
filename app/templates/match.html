@@ -1,34 +1,64 @@
 {% extends "base.html" %}
-{% block title %}Matchweek Result{% endblock %}
+{% block title %}Live Match Centre{% endblock %}
+{% block page_id %}match{% endblock %}
 {% block content %}
-<section class="score-card">
-  <p class="eyebrow">FULL TIME</p>
-  <div class="scoreline">
-    <span>{{ report.home_name }}</span>
-    <strong>{{ report.home_goals }}–{{ report.away_goals }}</strong>
-    <span>{{ report.away_name }}</span>
-  </div>
-  {% if report.started %}
-    <div class="metrics compact">
-      <div><span>Goals</span><strong>{{ report.goals }}</strong></div>
-      <div><span>Assists</span><strong>{{ report.assists }}</strong></div>
-      <div><span>Rating</span><strong>{{ report.rating }}</strong></div>
-      <div><span>Award</span><strong>{% if report.motm %}MOTM{% else %}—{% endif %}</strong></div>
+<section class="match-stage" id="match-stage"
+  data-player-team-home="{{ 'true' if report.player_team_is_home else 'false' }}"
+  data-final-home="{{ report.home_goals }}" data-final-away="{{ report.away_goals }}">
+  <div class="match-stage-top">
+    <span class="live-badge"><i></i> MATCH REPLAY</span>
+    <div class="match-clock"><strong id="match-minute">00'</strong><span id="match-status">Playing</span></div>
+    <div class="speed-controls" aria-label="Replay speed">
+      <button type="button" data-match-speed="1" class="active">1×</button>
+      <button type="button" data-match-speed="2">2×</button>
+      <button type="button" data-match-speed="3">3×</button>
     </div>
-  {% else %}<p>You were not selected for the starting XI.</p>{% endif %}
+  </div>
+
+  <div class="stadium-scoreboard">
+    <div class="team-side"><span class="club-monogram">{{ report.home_name[:2]|upper }}</span><h1>{{ report.home_name }}</h1></div>
+    <div class="score-centre"><strong><span id="home-live-score">0</span><b>–</b><span id="away-live-score">0</span></strong><small>FULL RESULT {{ report.home_goals }}–{{ report.away_goals }}</small></div>
+    <div class="team-side away"><span class="club-monogram">{{ report.away_name[:2]|upper }}</span><h1>{{ report.away_name }}</h1></div>
+  </div>
+
+  <div class="match-controls">
+    <button type="button" class="button secondary" id="pause-replay">Pause <kbd>Space</kbd></button>
+    <button type="button" class="button secondary" id="finish-replay">Skip to full time <kbd>Enter</kbd></button>
+  </div>
 </section>
 
-<div class="layout">
-  <section class="panel">
-    <p class="eyebrow">COMMENTARY</p>
-    <pre class="commentary">{{ report.commentary }}</pre>
+<script id="match-events" type="application/json">{{ report.events|tojson }}</script>
+
+<div class="match-layout">
+  <section class="panel commentary-panel">
+    <div class="panel-heading"><div><p class="eyebrow">LIVE COMMENTARY</p><h2>The match as it unfolds</h2></div><span class="event-count" id="event-count">0 / {{ report.events|length }}</span></div>
+    <div class="timeline" id="match-timeline" aria-live="polite"></div>
   </section>
-  <section class="panel">
-    <p class="eyebrow">OTHER RESULTS</p>
-    {% for result in results %}
-      <p class="result-row"><span>{{ result.home_name }}</span><strong>{{ result.home_goals }}–{{ result.away_goals }}</strong><span>{{ result.away_name }}</span></p>
-    {% endfor %}
-  </section>
+
+  <aside class="panel player-match-card">
+    <p class="eyebrow">PLAYER REPORT</p>
+    <h2>{{ career.player_name }}</h2>
+    <span class="selection-label">{{ report.selection_status|upper }}</span>
+    {% if report.selection_status in ['starter', 'substitute'] %}
+    <div class="match-stat-grid">
+      <div><span>Minutes</span><strong>{{ report.minutes }}</strong></div><div><span>Goals</span><strong>{{ report.goals }}</strong></div>
+      <div><span>Assists</span><strong>{{ report.assists }}</strong></div><div><span>Rating</span><strong>{{ report.rating }}</strong></div>
+      <div><span>Cards</span><strong>{{ report.yellow_cards }}Y / {{ report.red_cards }}R</strong></div><div><span>Award</span><strong>{% if report.motm %}MOTM{% else %}—{% endif %}</strong></div>
+    </div>
+    {% else %}<p class="muted">You did not enter the pitch this match.</p>{% endif %}
+    <div class="fitness-shift"><span>Fitness</span><strong>{{ report.fitness_before }}% → {{ report.fitness_after }}%</strong></div>
+    <div class="development-note"><span>DEVELOPMENT</span><p>{{ report.development_summary }}</p></div>
+    {% if report.injured %}<p class="danger-text">You suffered an injury. Recovery time will appear on the dashboard.</p>{% endif %}
+  </aside>
 </div>
-<a class="button primary" href="{{ url_for('main.index') }}">Continue</a>
+
+<section class="panel results-strip">
+  <div class="panel-heading"><div><p class="eyebrow">MATCHWEEK</p><h2>Other results</h2></div></div>
+  <div class="other-results">
+    {% for result in results %}<p class="result-row"><span>{{ result.home_name }}</span><strong>{{ result.home_goals }}–{{ result.away_goals }}</strong><span>{{ result.away_name }}</span></p>{% endfor %}
+  </div>
+</section>
+
+<a class="button primary continue-button" href="{{ url_for('main.index') }}">Return to dashboard</a>
 {% endblock %}
+
