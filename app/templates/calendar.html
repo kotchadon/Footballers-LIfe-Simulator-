@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}Calendar — Footy Career{% endblock %}
+{% block page_id %}calendar{% endblock %}
+{% block content %}
+<section class="section-hero"><p class="eyebrow">{{ career.season_label }} · WEEK {{ career.calendar_week }} OF 52</p><h1>Football calendar</h1><p>League rounds, free weeks, international windows, transfer windows and the close season now share one timeline.</p></section>
+
+<div class="dashboard-grid top-grid">
+  <section class="panel">
+    <p class="eyebrow">CURRENT WEEK</p>
+    {% if calendar.context.week %}<h2>{{ calendar.context.week.headline }}</h2><p>{{ calendar.context.week.start_date }} – {{ calendar.context.week.end_date }}</p><p class="muted">{{ calendar.context.week.phase|title }}</p>{% else %}<h2>Calendar complete</h2>{% endif %}
+    {% if calendar.context.can_play %}<form method="post" action="{{ url_for('main.play') }}"><button class="button primary keyboard-continue">Play scheduled match</button></form>
+    {% elif season_complete and career.season_phase != 'offseason' %}<form method="post" action="{{ url_for('main.end_season') }}"><button class="button primary keyboard-continue">Close competitive season</button></form>
+    {% elif calendar.context.calendar_complete %}<form method="post" action="{{ url_for('main.season_start') }}"><button class="button primary keyboard-continue">Start next season</button></form>
+    {% else %}<form method="post" action="{{ url_for('main.calendar_advance') }}"><input type="hidden" name="next" value="{{ url_for('main.calendar_view') }}"><button class="button primary keyboard-continue">Advance one week</button></form>{% endif %}
+  </section>
+  <section class="panel">
+    <p class="eyebrow">INTERNATIONAL CAREER</p>
+    {% if international.team %}<h2>{{ international.team.name }}</h2><p>{{ international.team.confederation }} · Team strength {{ international.team.strength }}</p>{% endif %}
+    {% if international.stats %}<div class="stat-lines"><p><span>Caps</span><strong>{{ international.stats.appearances }}</strong></p><p><span>Goals / assists</span><strong>{{ international.stats.goals }} / {{ international.stats.assists }}</strong></p><p><span>Average rating</span><strong>{{ international.stats.average_rating }}</strong></p></div>{% endif %}
+  </section>
+</div>
+
+{% if career.season_phase in ['offseason','preseason'] %}
+<section class="panel" id="offseason-programme"><div class="panel-heading"><div><p class="eyebrow">PLAYER PROGRAMME</p><h2>Choose how this free week is used</h2></div></div>
+  <div class="programme-grid">
+  {% for key, item in {'rest':('Full recovery','Medical work and rest'), 'holiday':('Private holiday','Morale boost with a cost'), 'personal_training':('Training camp','Development XP'), 'commercial':('Commercial work','Income and exposure'), 'charity':('Charity programme','Reputation and balance'), 'agent_meeting':('Agent meeting','Career strategy')}.items() %}
+    <form class="programme-card" method="post" action="{{ url_for('main.offseason_action') }}"><input type="hidden" name="action" value="{{ key }}"><input type="hidden" name="next" value="{{ url_for('main.calendar_view') }}"><h3>{{ item[0] }}</h3><p>{{ item[1] }}</p><button class="button secondary">Select</button></form>
+  {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+<section class="panel calendar-board">
+  <div class="panel-heading"><div><p class="eyebrow">52-WEEK MASTER SCHEDULE</p><h2>July to June</h2></div><div class="calendar-legend"><span class="league">Club</span><span class="international">International</span><span class="offseason">Offseason</span></div></div>
+  <div class="week-grid">
+  {% for week in calendar.weeks %}
+    <article class="week-card {% if week.week == career.calendar_week %}current{% endif %} phase-{{ week.phase }} {% if week.status == 'completed' %}completed{% endif %}">
+      <div><b>W{{ week.week }}</b><span>{{ week.start_date[5:] }}</span></div><h3>{{ week.headline }}</h3>
+      {% if week.events %}<ul>{% for event in week.events %}<li class="event-{{ event.event_type }}">{{ event.title }}</li>{% endfor %}</ul>{% endif %}
+    </article>
+  {% endfor %}
+  </div>
+</section>
+
+{% if international.recent %}<section class="panel"><p class="eyebrow">RECENT NATIONAL WINDOWS</p><div class="report-list">{% for callup in international.recent %}<article><strong>{{ callup.national_team_name }} · {{ callup.competition }}</strong><span>{{ callup.status|replace('_',' ')|title }} · {{ callup.appearances }} apps · {{ callup.goals }}G {{ callup.assists }}A</span></article>{% endfor %}</div></section>{% endif %}
+{% endblock %}

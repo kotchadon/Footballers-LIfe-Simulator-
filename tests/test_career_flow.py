@@ -3,11 +3,13 @@ from pathlib import Path
 from app import create_app
 from app.db import get_db
 from app.services import (
+    advance_calendar_week,
     create_career,
     finalize_season,
     get_active_career,
     play_next_week,
     set_training_focus,
+    start_next_season,
 )
 
 
@@ -91,9 +93,20 @@ def test_complete_season_and_rollover(tmp_path: Path):
         assert success
 
         career = get_active_career()
+        assert career["season_number"] == 1
+        assert career["season_phase"] == "offseason"
+        assert career["age"] == 16
+
+        while get_active_career()["calendar_week"] <= 52:
+            success, message, _data = advance_calendar_week(career_id, seed=99)
+            assert success, message
+        success, message = start_next_season(career_id)
+        assert success, message
+        career = get_active_career()
         assert career["season_number"] == 2
         assert career["age"] == 17
         assert career["current_week"] == 1
+        assert career["calendar_week"] == 1
 
         history_count = get_db().execute(
             "SELECT COUNT(*) AS total FROM season_history WHERE career_id = ?", (career_id,)

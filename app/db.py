@@ -17,6 +17,14 @@ CAREER_COLUMNS = {
     "squad_level": "TEXT NOT NULL DEFAULT 'first_team'",
     "manager_trust": "INTEGER NOT NULL DEFAULT 35",
     "pathway_status": "TEXT NOT NULL DEFAULT 'senior_development'",
+    "calendar_week": "INTEGER NOT NULL DEFAULT 1",
+    "season_phase": "TEXT NOT NULL DEFAULT 'competitive'",
+    "national_team_reputation": "INTEGER NOT NULL DEFAULT 0",
+    "national_team_status": "TEXT NOT NULL DEFAULT 'uncapped'",
+    "agent_quality": "INTEGER NOT NULL DEFAULT 45",
+    "market_value": "INTEGER NOT NULL DEFAULT 100000",
+    "lifestyle_balance": "INTEGER NOT NULL DEFAULT 70",
+    "stress": "INTEGER NOT NULL DEFAULT 15",
 }
 
 PLAYER_STATS_COLUMNS = {
@@ -33,6 +41,9 @@ FIXTURE_COLUMNS = {
     "competition_id": "INTEGER",
     "stage": "TEXT NOT NULL DEFAULT 'league'",
     "round_label": "TEXT NOT NULL DEFAULT ''",
+    "calendar_week": "INTEGER",
+    "kickoff_date": "TEXT",
+    "fixture_order": "INTEGER NOT NULL DEFAULT 1",
 }
 
 CLUB_COLUMNS = {
@@ -48,8 +59,21 @@ STANDINGS_COLUMNS = {
     "season_number": "INTEGER NOT NULL DEFAULT 1",
 }
 
-TRANSFER_COLUMNS = {"to_league_id": "INTEGER"}
+TRANSFER_COLUMNS = {
+    "to_league_id": "INTEGER",
+    "offer_type": "TEXT NOT NULL DEFAULT 'first_team_opportunity'",
+    "squad_role": "TEXT NOT NULL DEFAULT 'First-team rotation'",
+    "contract_years": "INTEGER NOT NULL DEFAULT 3",
+    "interest_score": "REAL NOT NULL DEFAULT 0",
+    "agent_recommendation": "TEXT NOT NULL DEFAULT ''",
+    "expires_calendar_week": "INTEGER",
+}
 SEASON_HISTORY_COLUMNS = {"league_id": "INTEGER"}
+FINANCE_TRANSACTION_COLUMNS = {
+    "calendar_week": "INTEGER",
+    "reference_type": "TEXT",
+    "reference_id": "INTEGER",
+}
 
 MATCH_REPORT_COLUMNS = {
     "season_number": "INTEGER NOT NULL DEFAULT 1",
@@ -103,6 +127,7 @@ def migrate_existing_save(db):
     _add_missing_columns(db, "standings", STANDINGS_COLUMNS)
     _add_missing_columns(db, "transfer_offers", TRANSFER_COLUMNS)
     _add_missing_columns(db, "season_history", SEASON_HISTORY_COLUMNS)
+    _add_missing_columns(db, "finance_transactions", FINANCE_TRANSACTION_COLUMNS)
     _add_missing_columns(db, "match_reports", MATCH_REPORT_COLUMNS)
     db.execute(
         "UPDATE player_stats SET minutes = starts * 90 WHERE minutes = 0 AND appearances > 0"
@@ -201,6 +226,15 @@ def migrate_existing_save(db):
     db.execute(
         "CREATE INDEX IF NOT EXISTS idx_competition_entries_season ON competition_entries(career_id, season_number, competition_id)"
     )
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_calendar_events_week ON career_calendar_events(career_id, season_number, week)"
+    )
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_transfer_market_status ON transfer_offers(career_id, season_number, status)"
+    )
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_finance_calendar_week ON finance_transactions(career_id, season_number, calendar_week)"
+    )
     db.commit()
 
 
@@ -210,6 +244,37 @@ def init_db():
     db.executescript(schema_path.read_text())
     migrate_existing_save(db)
     from .world import seed_world_database, migrate_legacy_world
+    from .economy import ensure_financial_profile, seed_economy_catalog
+    from .international import seed_national_teams
+    from .calendar_engine import generate_season_calendar
     seed_world_database(db)
     migrate_legacy_world(db)
+    seed_economy_catalog(db)
+    seed_national_teams(db)
+    for career in db.execute("SELECT * FROM careers").fetchall():
+        ensure_financial_profile(db, career["id"])
+        has_calendar = db.execute(
+            "SELECT 1 FROM career_calendar_weeks WHERE career_id=? AND season_number=? LIMIT 1",
+            (career["id"], career["season_number"]),
+        ).fetchone()
+        if has_calendar is None and career["league_id"] is not None:
+            # Migrated V5 saves retain their match progress. The calendar starts
+            # close to the next unresolved league round rather than resetting it.
+            generate_season_calendar(
+                db, career["id"], career["season_number"], career["season_label"], career["league_id"]
+            )
+            next_fixture = db.execute(
+                """
+                SELECT calendar_week FROM fixtures
+                WHERE career_id=? AND season_number=? AND played=0
+                  AND (home_club_id=? OR away_club_id=?)
+                ORDER BY week,id LIMIT 1
+                """,
+                (career["id"], career["season_number"], career["club_id"], career["club_id"]),
+            ).fetchone()
+            if next_fixture and next_fixture["calendar_week"]:
+                db.execute(
+                    "UPDATE careers SET calendar_week=MAX(calendar_week, ?) WHERE id=?",
+                    (next_fixture["calendar_week"], career["id"]),
+                )
     db.commit()

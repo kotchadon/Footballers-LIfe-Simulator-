@@ -8,6 +8,26 @@ import uuid
 from datetime import datetime, timezone
 
 from .db import get_db
+from .calendar_engine import generate_season_calendar, get_calendar, get_week_context
+from .economy import (
+    accept_endorsement as economy_accept_endorsement,
+    buy_investment as economy_buy_investment,
+    buy_property as economy_buy_property,
+    decline_endorsement as economy_decline_endorsement,
+    ensure_financial_profile,
+    get_financial_dashboard as economy_get_financial_dashboard,
+    place_virtual_wager as economy_place_virtual_wager,
+    process_weekly_finances,
+    sell_investment as economy_sell_investment,
+    take_offseason_action as economy_take_offseason_action,
+)
+from .international import get_international_summary as international_get_summary, process_international_week
+from .transfer_market import (
+    expire_market_offers,
+    generate_transfer_market,
+    get_market_dashboard as transfer_get_market_dashboard,
+    request_agent_search as transfer_request_agent_search,
+)
 from .engine import (
     POSITION_WEIGHTS,
     build_commentary_events,
@@ -174,6 +194,13 @@ def create_career(player_name, nationality, position):
     )
     initialize_world_memberships(db, career_id, 1)
     _create_season_world(career_id, 1, starting_club["selected_league_id"])
+    generate_season_calendar(db, career_id, 1, "2026/27", starting_club["selected_league_id"])
+    db.execute(
+        "UPDATE careers SET calendar_week=4, season_phase='preseason', market_value=? WHERE id=?",
+        (max(50_000, overall * overall * 38), career_id),
+    )
+    db.execute("INSERT OR IGNORE INTO international_player_stats(career_id) VALUES (?)", (career_id,))
+    ensure_financial_profile(db, career_id)
     db.commit()
     return career_id
 
@@ -441,9 +468,12 @@ def _build_match_snapshot(career, fixtures, seed):
     simulation_start_week = int(career.get("simulation_start_week", career["current_week"]))
     target_week = max(fixture["week"] for fixture in fixtures if career["club_id"] in (fixture["home_club_id"], fixture["away_club_id"]))
     simulation_end_week = int(career.get("simulation_end_week", target_week))
-    pre_match_weeks = max(1, target_week - simulation_start_week + 1)
-    elapsed_weeks = max(pre_match_weeks, simulation_end_week - simulation_start_week + 1)
-    idle_weeks = pre_match_weeks - 1
+    # Calendar advancement now handles rest, salary and non-match weeks.
+    # A sealed match therefore represents exactly one fixture, even when the
+    # league uses midweek rounds in the same calendar week.
+    pre_match_weeks = 1
+    elapsed_weeks = 1
+    idle_weeks = 0
     training_focus = career["training_focus"] if career["training_focus"] in TRAINING_FOCUS else "balanced"
     training_plan = TRAINING_FOCUS[training_focus]
     recovery_per_week = rng.randint(13, 17) if training_focus == "recovery" else rng.randint(8, 12)
@@ -463,6 +493,8 @@ def _build_match_snapshot(career, fixtures, seed):
         result_row = {
             "fixture_id": fixture["id"],
             "week": fixture["week"],
+            "calendar_week": fixture["calendar_week"] if "calendar_week" in fixture.keys() else fixture["week"],
+            "kickoff_date": fixture["kickoff_date"] if "kickoff_date" in fixture.keys() else None,
             "home_club_id": fixture["home_club_id"],
             "away_club_id": fixture["away_club_id"],
             "home_name": fixture["home_name"],
@@ -597,7 +629,7 @@ def _build_match_snapshot(career, fixtures, seed):
             f"match performance added {match_xp} XP. Progress: {development['xp']}/100."
         )
 
-    weekly_income = career["wage"] * elapsed_weeks
+    weekly_income = 0  # Salary is processed once per calendar week by the finance engine.
     bonus = performance["goals"] * 75 + performance["assists"] * 40 + int(performance["motm"]) * 100
     max_week = max(fixture["week"] for fixture in fixtures)
     # max_week above is current week only; actual season max is resolved during commit.
@@ -610,6 +642,7 @@ def _build_match_snapshot(career, fixtures, seed):
             "season_number": career["season_number"],
             "season_label": career["season_label"],
             "week": target_week,
+            "calendar_week": player_fixture.get("calendar_week", career.get("calendar_week", target_week)),
             "start_week": simulation_start_week,
             "elapsed_weeks": elapsed_weeks,
             "end_week": simulation_end_week,
@@ -679,9 +712,10 @@ def prepare_next_match(career_id, seed=None):
         """
         SELECT MIN(week) AS target_week FROM fixtures
         WHERE career_id=? AND season_number=? AND league_id=? AND played=0
-          AND week>=? AND (home_club_id=? OR away_club_id=?)
+          AND week>=? AND COALESCE(calendar_week, week)<=?
+          AND (home_club_id=? OR away_club_id=?)
         """,
-        (career_id, career["season_number"], career["league_id"], career["current_week"], career["club_id"], career["club_id"]),
+        (career_id, career["season_number"], career["league_id"], career["current_week"], career["calendar_week"], career["club_id"], career["club_id"]),
     ).fetchone()
     if target is None or target["target_week"] is None:
         return None
@@ -777,6 +811,8 @@ def get_match_session_view(public_id, career_id):
         "position": snapshot["career"]["position"],
         "season_label": snapshot["career"]["season_label"],
         "week": snapshot["career"]["week"],
+        "calendar_week": snapshot["career"].get("calendar_week"),
+        "kickoff_date": fixture.get("kickoff_date"),
         "league_id": snapshot["career"].get("league_id"),
     }
 
@@ -903,7 +939,12 @@ def complete_match_session(public_id, career_id, allow_skip=False):
             (career_id,),
         ).fetchone()
         expected = snapshot["career"]
-        if career is None or career["season_number"] != expected["season_number"] or career["current_week"] != expected.get("start_week", expected["week"]):
+        if (
+            career is None
+            or career["season_number"] != expected["season_number"]
+            or career["current_week"] != expected.get("start_week", expected["week"])
+            or career["calendar_week"] != expected.get("calendar_week", career["calendar_week"])
+        ):
             db.rollback()
             return False, "Career state changed after this match was prepared.", None
 
@@ -1017,20 +1058,13 @@ def complete_match_session(public_id, career_id, allow_skip=False):
             expected.get("league_id") or career["league_id"],
         )
 
-        db.execute(
-            """
-            INSERT INTO finance_transactions(career_id, season_number, week, category, amount, description)
-            VALUES (?, ?, ?, 'Wages', ?, ?)
-            """,
-            (career_id, expected["season_number"], expected["week"], post_match["weekly_income"], f"Weekly wage from {fixture['home_name'] if fixture['player_team_is_home'] else fixture['away_name']}"),
-        )
         if post_match["bonus"]:
             db.execute(
                 """
-                INSERT INTO finance_transactions(career_id, season_number, week, category, amount, description)
-                VALUES (?, ?, ?, 'Match bonus', ?, 'Goals, assists and performance bonus')
+                INSERT INTO finance_transactions(career_id, season_number, week, calendar_week, category, amount, description)
+                VALUES (?, ?, ?, ?, 'Match bonus', ?, 'Goals, assists and performance bonus')
                 """,
-                (career_id, expected["season_number"], expected["week"], post_match["bonus"]),
+                (career_id, expected["season_number"], expected["week"], expected.get("calendar_week"), post_match["bonus"]),
             )
 
         max_week = db.execute(
@@ -1059,10 +1093,22 @@ def complete_match_session(public_id, career_id, allow_skip=False):
 
 
 def play_next_week(career_id, seed=None):
-    """Backward-compatible headless helper used by tests and season simulation.
+    """Headless helper that advances free calendar weeks to the next club match.
 
-    Browser gameplay uses prepare_next_match + event replay + complete_match_session.
+    Browser gameplay never jumps time automatically. Test and bulk-simulation
+    callers may use this helper to process salary, recovery and international
+    windows until the next playable fixture is reached.
     """
+    for offset in range(60):
+        career = get_active_career()
+        if career is None or career["id"] != career_id:
+            return None
+        context = get_week_context(get_db(), career)
+        if context["can_play"]:
+            break
+        success, _message, _data = advance_calendar_week(career_id, seed=(int(seed or 0) + offset + 7919))
+        if not success:
+            return None
     session = prepare_next_match(career_id, seed=seed)
     if session is None:
         return None
@@ -1199,75 +1245,16 @@ def _next_season_label(label):
 
 
 def _generate_transfer_offers(db, career, season_stats, rng, target_season):
-    """Create cross-league offers from clubs that actually exist next season."""
-    if season_stats["appearances"] < 4:
-        return 0
-
-    current_club = db.execute(
-        "SELECT c.*, l.reputation AS league_reputation FROM clubs c JOIN leagues l ON l.id=? WHERE c.id=?",
-        (career["league_id"], career["club_id"]),
-    ).fetchone()
-    performance_score = (
-        career["overall"]
-        + career["reputation"] * 0.18
-        + season_stats["average_rating"] * 1.8
-        + min(12, (season_stats["goals"] + season_stats["assists"]) * 0.45)
-    )
-    rows = db.execute(
-        """
-        SELECT c.*, wm.league_id AS destination_league_id,
-               l.name AS league_name, l.reputation AS league_reputation,
-               co.name AS country_name
-        FROM world_memberships wm
-        JOIN clubs c ON c.id=wm.club_id
-        JOIN leagues l ON l.id=wm.league_id
-        JOIN countries co ON co.id=l.country_id
-        WHERE wm.career_id=? AND wm.season_number=? AND c.id<>?
-        ORDER BY l.reputation, c.strength
-        """,
-        (career["id"], target_season, career["club_id"]),
-    ).fetchall()
-    candidates = []
-    for club in rows:
-        upward = club["strength"] >= current_club["strength"] - 2
-        attainable = club["strength"] <= performance_score + 8
-        league_jump_ok = club["league_reputation"] <= current_club["league_reputation"] + max(8, career["reputation"] // 4)
-        if upward and attainable and league_jump_ok:
-            candidates.append(club)
-    if not candidates:
-        candidates = [row for row in rows if row["strength"] > current_club["strength"]][:8]
-
-    # Diversity: no more than one offer per league, maximum three offers.
-    rng.shuffle(candidates)
-    selected = []
-    used_leagues = set()
-    for club in sorted(candidates, key=lambda row: (row["league_reputation"], row["strength"]), reverse=True):
-        if club["destination_league_id"] in used_leagues:
-            continue
-        selected.append(club)
-        used_leagues.add(club["destination_league_id"])
-        if len(selected) == 3:
-            break
-
-    for club in selected:
-        wage = max(
-            career["wage"] + 100,
-            round((club["strength"] * 11 + club["league_reputation"] * 7 + career["overall"] * 5) / 50) * 50,
-        )
-        signing_bonus = wage * rng.randint(4, 8)
-        db.execute(
-            """
-            INSERT INTO transfer_offers(
-                career_id, season_number, from_club_id, to_club_id,
-                wage, signing_bonus, to_league_id
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)
-            """,
-            (career["id"], target_season, career["club_id"], club["id"], wage, signing_bonus, club["destination_league_id"]),
-        )
-    return len(selected)
+    return generate_transfer_market(db, career, season_stats, rng, target_season)
 
 
 def finalize_season(career_id, seed=None):
+    """Close the competitive league season but keep the off-season playable.
+
+    V5 jumped immediately into a new season. V6 separates league closure from
+    the four-week close season so transfers, international finals, recovery and
+    financial decisions can happen before the next pre-season begins.
+    """
     seed_value = int(seed) if seed is not None else secrets.randbits(63)
     rng = random.Random(seed_value)
     db = get_db()
@@ -1275,10 +1262,9 @@ def finalize_season(career_id, seed=None):
     try:
         career = db.execute(
             """
-            SELECT careers.*, clubs.strength AS club_strength,
+            SELECT careers.*, clubs.strength AS club_strength, clubs.name AS club_name,
                    leagues.name AS league_name, leagues.reputation AS league_reputation
-            FROM careers
-            JOIN clubs ON clubs.id=careers.club_id
+            FROM careers JOIN clubs ON clubs.id=careers.club_id
             JOIN leagues ON leagues.id=careers.league_id
             WHERE careers.id=?
             """,
@@ -1289,23 +1275,25 @@ def finalize_season(career_id, seed=None):
             return False, "Career not found."
         if get_active_match_session(career_id) is not None:
             db.rollback()
-            return False, "Finish the active match before finalising the season."
+            return False, "Finish the active match before closing the season."
+        if career["season_phase"] == "offseason":
+            db.rollback()
+            return False, "The league season is already closed. Advance through the off-season."
         if not season_is_complete(career):
             db.rollback()
-            return False, "The season is not complete yet."
+            return False, "The league schedule is not complete yet."
         if db.execute(
             "SELECT 1 FROM season_history WHERE career_id=? AND season_number=?",
             (career_id, career["season_number"]),
         ).fetchone():
             db.rollback()
-            return False, "This season has already been finalised."
+            return False, "This season has already been recorded."
 
         standings = get_standings(career_id)
         position = next(index for index, row in enumerate(standings, 1) if row["club_id"] == career["club_id"])
         club_row = next(row for row in standings if row["club_id"] == career["club_id"])
         season_stats = get_season_stats(career_id, career["season_number"])
         awards = record_season_awards(db, career, season_stats, position, career["league_reputation"])
-
         db.execute(
             """
             INSERT INTO season_history(
@@ -1321,67 +1309,99 @@ def finalize_season(career_id, seed=None):
                 ", ".join(awards),
             ),
         )
-
         prize = max(500, round(career["league_reputation"] * (len(standings) - position + 1) * 7.5))
         if position == 1:
             prize += career["league_reputation"] * 40
         prize += len(awards) * max(300, career["league_reputation"] * 6)
         db.execute(
             """
-            INSERT INTO finance_transactions(career_id, season_number, week, category, amount, description)
-            VALUES (?, ?, ?, 'Season rewards', ?, ?)
+            INSERT INTO finance_transactions(
+                career_id, season_number, week, calendar_week, category, amount, description
+            ) VALUES (?, ?, ?, ?, 'Season rewards', ?, ?)
             """,
-            (career_id, career["season_number"], career["current_week"], prize,
-             f"{career['league_name']} finish: {position}; awards: {', '.join(awards) or 'none'}"),
+            (
+                career_id, career["season_number"], career["current_week"], career["calendar_week"], prize,
+                f"{career['league_name']} finish: {position}; awards: {', '.join(awards) or 'none'}",
+            ),
         )
-
-        world_result = resolve_world_season(
-            db, career_id, career["season_number"], career["league_id"], seed_value
-        )
+        world_result = resolve_world_season(db, career_id, career["season_number"], career["league_id"], seed_value)
         simulate_background_honours(db, career_id, career["season_number"], seed_value)
-        next_number = career["season_number"] + 1
-        next_label = _next_season_label(career["season_label"])
-        membership = db.execute(
-            "SELECT league_id FROM world_memberships WHERE career_id=? AND season_number=? AND club_id=?",
-            (career_id, next_number, career["club_id"]),
-        ).fetchone()
-        next_league_id = membership["league_id"] if membership else career["league_id"]
-
-        offer_count = _generate_transfer_offers(db, career, season_stats, rng, next_number)
+        target_season = career["season_number"] + 1
+        offer_count = generate_transfer_market(db, career, season_stats, rng, target_season)
         db.execute(
             """
-            UPDATE careers
-            SET age=age+1, season_number=?, season_label=?, current_week=1,
-                league_id=?, weekly_action_used=0, fitness=MIN(100, fitness+20),
-                morale=MIN(100, morale+?), money=money+?,
-                manager_trust=MIN(100, MAX(10, manager_trust+?))
+            UPDATE careers SET season_phase='offseason', calendar_week=MAX(calendar_week,49),
+                fitness=MIN(100,fitness+8), morale=MIN(100,morale+?), money=money+?,
+                manager_trust=MIN(100,MAX(10,manager_trust+?))
             WHERE id=?
             """,
-            (next_number, next_label, next_league_id, 8 if position <= 3 else 3, prize,
-             5 if position <= 4 else -2, career_id),
+            (8 if position <= 3 else 3, prize, 5 if position <= 4 else -2, career_id),
         )
-        db.execute(
-            """
-            INSERT INTO season_player_stats(career_id, season_number, season_label, club_id)
-            VALUES (?, ?, ?, ?)
-            """,
-            (career_id, next_number, next_label, career["club_id"]),
-        )
-        _create_season_world(career_id, next_number, next_league_id)
         db.commit()
-
-        movement = ""
-        if next_league_id != career["league_id"]:
-            next_league = get_league_row(db, next_league_id)
-            movement = f" Your club moves to {next_league['name']}."
         summary = (
-            f"{career['season_label']} complete: {position} in {career['league_name']}, "
-            f"earned ${prize:,}. {world_result['qualification_count']} continental places recorded."
-            f"{movement} {offer_count} transfer offer(s) generated."
+            f"{career['season_label']} league campaign closed: {position} in {career['league_name']}. "
+            f"${prize:,} was credited, {world_result['qualification_count']} continental entries were recorded, "
+            f"and {offer_count} transfer-market opportunities were created."
         )
         if awards:
             summary += f" Awards: {', '.join(awards)}."
         return True, summary
+    except Exception:
+        db.rollback()
+        raise
+
+
+def start_next_season(career_id):
+    db = get_db()
+    db.execute("BEGIN IMMEDIATE")
+    try:
+        career = db.execute("SELECT * FROM careers WHERE id=?", (career_id,)).fetchone()
+        if career is None:
+            db.rollback()
+            return False, "Career not found."
+        if career["season_phase"] != "offseason":
+            db.rollback()
+            return False, "Close the current league season first."
+        if career["calendar_week"] <= 52:
+            db.rollback()
+            return False, "Complete the remaining off-season calendar weeks first."
+        next_number = career["season_number"] + 1
+        next_label = _next_season_label(career["season_label"])
+        membership = db.execute(
+            """
+            SELECT league_id FROM world_memberships
+            WHERE career_id=? AND season_number=? AND club_id=?
+            """,
+            (career_id, next_number, career["club_id"]),
+        ).fetchone()
+        next_league_id = membership["league_id"] if membership else career["league_id"]
+        db.execute(
+            """
+            UPDATE careers SET age=age+1, season_number=?, season_label=?, current_week=1,
+                calendar_week=1, season_phase='offseason', league_id=?, weekly_action_used=0,
+                fitness=MIN(100,fitness+12), morale=MIN(100,morale+4),
+                stress=MAX(0,stress-10)
+            WHERE id=?
+            """,
+            (next_number, next_label, next_league_id, career_id),
+        )
+        db.execute(
+            """
+            INSERT OR IGNORE INTO season_player_stats(career_id,season_number,season_label,club_id)
+            VALUES (?,?,?,?)
+            """,
+            (career_id, next_number, next_label, career["club_id"]),
+        )
+        _create_season_world(career_id, next_number, next_league_id)
+        generate_season_calendar(db, career_id, next_number, next_label, next_league_id)
+        db.execute(
+            "UPDATE player_contracts SET status='expired' WHERE career_id=? AND status='active' AND end_season<?",
+            (career_id, next_number),
+        )
+        ensure_financial_profile(db, career_id)
+        db.commit()
+        league = get_league_row(db, next_league_id)
+        return True, f"{next_label} begins with the July close-season programme at {league['name']}."
     except Exception:
         db.rollback()
         raise
@@ -1418,9 +1438,12 @@ def accept_transfer_offer(career_id, offer_id):
             db.rollback()
             return False, "Transfer offer is no longer available."
         career = db.execute("SELECT * FROM careers WHERE id=?", (career_id,)).fetchone()
-        if get_active_match_session(career_id) is not None or career["current_week"] != 1:
+        if get_active_match_session(career_id) is not None:
             db.rollback()
-            return False, "Transfers can only be completed before the new season begins."
+            return False, "Finish the active match before completing a transfer."
+        if career["season_phase"] != "offseason":
+            db.rollback()
+            return False, "Formal club changes are completed during the close-season window."
         club = db.execute(
             """
             SELECT c.*, l.name AS league_name, l.id AS destination_league_id
@@ -1433,47 +1456,86 @@ def accept_transfer_offer(career_id, offer_id):
             SELECT 1 FROM world_memberships
             WHERE career_id=? AND season_number=? AND club_id=? AND league_id=?
             """,
-            (career_id, career["season_number"], offer["to_club_id"], offer["to_league_id"]),
+            (career_id, offer["season_number"], offer["to_club_id"], offer["to_league_id"]),
         ).fetchone()
         if membership is None:
             db.rollback()
-            return False, "The destination club is not registered in that league this season."
-
+            return False, "The destination club is not registered in that league for the target season."
         db.execute("UPDATE transfer_offers SET status='accepted' WHERE id=?", (offer_id,))
-        db.execute("UPDATE transfer_offers SET status='declined' WHERE career_id=? AND id<>? AND status='pending'", (career_id, offer_id))
-        db.execute("UPDATE club_history SET left_season=? WHERE career_id=? AND left_season IS NULL", (career["season_number"], career_id))
         db.execute(
-            "INSERT INTO club_history(career_id, club_id, joined_season, reason) VALUES (?, ?, ?, 'Transfer')",
-            (career_id, offer["to_club_id"], career["season_number"]),
+            "UPDATE transfer_offers SET status='declined' WHERE career_id=? AND id<>? AND status='pending'",
+            (career_id, offer_id),
         )
-        squad_level = "first_team" if career["overall"] >= club["strength"] - 9 else "reserve_bridge"
-        trust = max(18, min(55, 50 - (club["strength"] - career["overall"])))
+        db.execute(
+            "UPDATE club_history SET left_season=? WHERE career_id=? AND left_season IS NULL",
+            (career["season_number"], career_id),
+        )
+        db.execute(
+            "INSERT INTO club_history(career_id,club_id,joined_season,reason) VALUES (?,?,?,'Transfer')",
+            (career_id, offer["to_club_id"], offer["season_number"]),
+        )
+        squad_level = "first_team" if offer["squad_role"] in {"Important player", "First-team rotation"} else "reserve_bridge"
+        trust = max(18, min(62, 54 - (club["strength"] - career["overall"])))
+        db.execute("UPDATE player_contracts SET status='terminated' WHERE career_id=? AND status='active'", (career_id,))
+        db.execute(
+            """
+            INSERT INTO player_contracts(
+                career_id,club_id,start_season,end_season,weekly_wage,
+                appearance_bonus,goal_bonus,assist_bonus,signing_bonus,squad_role,status
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,'active')
+            """,
+            (
+                career_id, offer["to_club_id"], offer["season_number"],
+                offer["season_number"] + offer["contract_years"], offer["wage"],
+                max(75, offer["wage"] // 8), max(150, offer["wage"] // 4),
+                max(100, offer["wage"] // 5), offer["signing_bonus"], offer["squad_role"],
+            ),
+        )
         db.execute(
             """
             UPDATE careers SET club_id=?, league_id=?, wage=?, money=money+?,
-                morale=MIN(100, morale+8), squad_level=?, manager_trust=?
+                morale=MIN(100,morale+8), squad_level=?, manager_trust=?,
+                stress=MAX(0,stress-3)
             WHERE id=?
             """,
-            (offer["to_club_id"], offer["to_league_id"], offer["wage"], offer["signing_bonus"], squad_level, trust, career_id),
+            (
+                offer["to_club_id"], offer["to_league_id"], offer["wage"],
+                offer["signing_bonus"], squad_level, trust, career_id,
+            ),
         )
-        db.execute(
-            "UPDATE season_player_stats SET club_id=? WHERE career_id=? AND season_number=?",
-            (offer["to_club_id"], career_id, career["season_number"]),
-        )
-        # The active match calendar follows the destination league after transfer.
-        _create_season_world(career_id, career["season_number"], offer["to_league_id"])
+        if offer["season_number"] == career["season_number"]:
+            # A July transfer happens before the first competitive fixture. Rebuild
+            # the active schedule around the destination league without mutating
+            # wider world memberships or completed historical seasons.
+            _create_season_world(career_id, career["season_number"], offer["to_league_id"])
+            generate_season_calendar(
+                db, career_id, career["season_number"], career["season_label"], offer["to_league_id"]
+            )
+
         db.execute(
             """
-            INSERT INTO finance_transactions(career_id, season_number, week, category, amount, description)
-            VALUES (?, ?, ?, 'Signing bonus', ?, ?)
+            INSERT INTO finance_transactions(
+                career_id,season_number,week,calendar_week,category,amount,description,
+                reference_type,reference_id
+            ) VALUES (?,?,?,?, 'Signing bonus', ?, ?, 'transfer', ?)
             """,
-            (career_id, career["season_number"], career["current_week"], offer["signing_bonus"], f"Signed for {club['name']} in {club['league_name']}"),
+            (
+                career_id, career["season_number"], career["current_week"], career["calendar_week"],
+                offer["signing_bonus"],
+                f"Signed for {club['name']} in {club['league_name']} — {offer['squad_role']}", offer_id,
+            ),
         )
         db.commit()
-        return True, f"Transfer complete: {club['name']} ({club['league_name']}) on ${offer['wage']:,} per week."
+        return True, (
+            f"Transfer complete: {club['name']} ({club['league_name']}), "
+            f"{offer['contract_years']}-year deal, {offer['squad_role'].lower()}, "
+            f"${offer['wage']:,} per week."
+        )
     except Exception:
         db.rollback()
         raise
+
+
 def decline_transfer_offer(career_id, offer_id):
     db = get_db()
     cursor = db.execute(
@@ -1553,3 +1615,215 @@ def get_competition_entries(career_id):
 
 def get_competition_honours(career_id, limit=60):
     return world_get_competition_honours(get_db(), career_id, limit)
+
+
+def get_calendar_dashboard(career_id):
+    db = get_db()
+    career = db.execute("SELECT * FROM careers WHERE id=?", (career_id,)).fetchone()
+    if career is None:
+        return {"weeks": [], "context": None}
+    return {
+        "weeks": get_calendar(db, career_id, career["season_number"]),
+        "context": get_week_context(db, career),
+    }
+
+
+def get_calendar_context(career):
+    if career is None:
+        return None
+    return get_week_context(get_db(), career)
+
+
+def _apply_free_week_development(db, career, rng):
+    focus = career["training_focus"] if career["training_focus"] in TRAINING_FOCUS else "balanced"
+    if focus == "recovery":
+        db.execute(
+            "UPDATE careers SET fitness=MIN(100,fitness+12), morale=MIN(100,morale+2), stress=MAX(0,stress-3) WHERE id=?",
+            (career["id"],),
+        )
+        return "Recovery plan restored fitness and reduced stress."
+    xp_gain = 8 if career["season_phase"] == "preseason" else 5 if career["season_phase"] == "competitive" else 3
+    development = _plan_development(career, xp_gain, focus, rng.getrandbits(63))
+    attrs = development["attributes"]
+    db.execute(
+        """
+        UPDATE player_attributes SET pace=?,shooting=?,passing=?,dribbling=?,defending=?,physical=?
+        WHERE career_id=?
+        """,
+        (attrs["pace"], attrs["shooting"], attrs["passing"], attrs["dribbling"], attrs["defending"], attrs["physical"], career["id"]),
+    )
+    db.execute(
+        """
+        UPDATE careers SET xp=?,overall=?,fitness=MIN(100,fitness+7),
+            morale=MIN(100,morale+1),stress=MAX(0,stress-1),
+            market_value=MAX(market_value,? * ? * 40)
+        WHERE id=?
+        """,
+        (development["xp"], development["overall"], development["overall"], development["overall"], career["id"]),
+    )
+    if development["upgrades"]:
+        return "Free-week breakthrough: " + ", ".join(item.title() for item in development["upgrades"]) + " +1."
+    return f"{TRAINING_FOCUS[focus]['label']} added {xp_gain} development XP."
+
+
+def advance_calendar_week(career_id, seed=None):
+    seed_value = int(seed) if seed is not None else secrets.randbits(63)
+    rng = random.Random(seed_value)
+    db = get_db()
+    db.execute("BEGIN IMMEDIATE")
+    try:
+        career = get_active_career()
+        if career is None or career["id"] != career_id:
+            db.rollback()
+            return False, "Career not found.", None
+        if get_active_match_session(career_id) is not None:
+            db.rollback()
+            return False, "Finish or skip the active match first.", None
+        if career["calendar_week"] > 52:
+            db.rollback()
+            return False, "The 52-week calendar is complete. Start the next season.", None
+        context = get_week_context(db, career)
+        if context["fixtures_this_week"]:
+            fixture = context["fixtures_this_week"][0]
+            db.rollback()
+            return False, f"Play {fixture['home_name']} vs {fixture['away_name']} before advancing the week.", None
+        if career["season_phase"] != "offseason" and season_is_complete(career) and career["calendar_week"] >= 48:
+            db.rollback()
+            return False, "The league campaign is complete. Close the season before entering the summer programme.", None
+
+        finance = process_weekly_finances(db, career, career["calendar_week"], rng)
+        international = process_international_week(db, career, career["calendar_week"], rng)
+        fresh = get_active_career()
+        development_message = _apply_free_week_development(db, fresh, rng)
+
+        # Off-season weeks default to controlled recovery when the user does not
+        # explicitly choose a programme. This prevents dead clicks while still
+        # rewarding deliberate choices on the calendar or finance screen.
+        action = db.execute(
+            """
+            SELECT title FROM career_week_actions
+            WHERE career_id=? AND season_number=? AND calendar_week=?
+            ORDER BY id LIMIT 1
+            """,
+            (career_id, career["season_number"], career["calendar_week"]),
+        ).fetchone()
+        if career["season_phase"] == "offseason" and action is None:
+            db.execute(
+                "UPDATE careers SET fitness=MIN(100,fitness+6),morale=MIN(100,morale+2),stress=MAX(0,stress-4) WHERE id=?",
+                (career_id,),
+            )
+
+        db.execute(
+            """
+            UPDATE career_calendar_weeks SET status='completed'
+            WHERE career_id=? AND season_number=? AND week=?
+            """,
+            (career_id, career["season_number"], career["calendar_week"]),
+        )
+        next_week = career["calendar_week"] + 1
+        if career["season_phase"] == "offseason":
+            next_phase = "offseason"
+        elif next_week <= 5:
+            next_phase = "preseason"
+        else:
+            next_phase = "competitive"
+        db.execute(
+            "UPDATE careers SET calendar_week=?,season_phase=?,weekly_action_used=0 WHERE id=?",
+            (next_week, next_phase, career_id),
+        )
+        expire_market_offers(db, career_id, career["season_number"], next_week)
+        db.commit()
+
+        international_text = ""
+        if international:
+            status = international.get("status")
+            if status == "selected":
+                international_text = (
+                    f" International duty: {international['appearances']} appearance(s), "
+                    f"{international['goals']} goal(s), {international['assists']} assist(s)."
+                )
+            elif status == "not_selected":
+                international_text = f" No {international['team']} call-up; the week became a recovery block."
+            elif status == "not_qualified":
+                international_text = f" {international['team']} did not qualify for {international['competition']}."
+        return True, (
+            f"Calendar week {career['calendar_week']} completed. Net cash flow: ${finance.get('net', 0):,}. "
+            f"{development_message}{international_text}"
+        ), {"finance": finance, "international": international, "next_week": next_week}
+    except Exception:
+        db.rollback()
+        raise
+
+
+def get_financial_dashboard(career_id):
+    return economy_get_financial_dashboard(get_db(), career_id)
+
+
+def accept_endorsement(career_id, endorsement_id):
+    db = get_db()
+    success, message = economy_accept_endorsement(db, career_id, endorsement_id)
+    db.commit() if success else db.rollback()
+    return success, message
+
+
+def decline_endorsement(career_id, endorsement_id):
+    db = get_db()
+    success = economy_decline_endorsement(db, career_id, endorsement_id)
+    db.commit()
+    return success
+
+
+def buy_investment(career_id, instrument_id, amount):
+    db = get_db()
+    success, message = economy_buy_investment(db, career_id, instrument_id, amount)
+    db.commit() if success else db.rollback()
+    return success, message
+
+
+def sell_investment(career_id, instrument_id, percent):
+    db = get_db()
+    success, message = economy_sell_investment(db, career_id, instrument_id, percent)
+    db.commit() if success else db.rollback()
+    return success, message
+
+
+def buy_property(career_id, property_id):
+    db = get_db()
+    success, message = economy_buy_property(db, career_id, property_id)
+    db.commit() if success else db.rollback()
+    return success, message
+
+
+def place_virtual_wager(career_id, stake, risk, seed=None):
+    db = get_db()
+    rng = random.Random(int(seed) if seed is not None else secrets.randbits(63))
+    success, message = economy_place_virtual_wager(db, career_id, stake, risk, rng)
+    db.commit() if success else db.rollback()
+    return success, message
+
+
+def take_offseason_action(career_id, action):
+    db = get_db()
+    success, message = economy_take_offseason_action(db, career_id, action)
+    db.commit() if success else db.rollback()
+    return success, message
+
+
+def get_international_summary(career_id):
+    return international_get_summary(get_db(), career_id)
+
+
+def get_market_dashboard(career_id):
+    return transfer_get_market_dashboard(get_db(), career_id)
+
+
+def request_agent_market_search(career_id, seed=None):
+    db = get_db()
+    career = get_active_career()
+    if career is None or career["id"] != career_id:
+        return False, "Career not found.", 0
+    stats = get_season_stats(career_id, career["season_number"])
+    rng = random.Random(int(seed) if seed is not None else secrets.randbits(63))
+    success, message, count = transfer_request_agent_search(db, career, stats, rng)
+    db.commit() if success else db.rollback()
+    return success, message, count

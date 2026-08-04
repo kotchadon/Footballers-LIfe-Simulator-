@@ -4,6 +4,7 @@ from pathlib import Path
 from app import create_app
 from app.db import get_db
 from app.services import (
+    advance_calendar_week,
     advance_match_session,
     complete_match_session,
     create_career,
@@ -19,10 +20,28 @@ def make_app(tmp_path: Path):
     return create_app({"TESTING": True, "DATABASE": str(database), "SECRET_KEY": "test"})
 
 
+def advance_to_first_fixture(career_id):
+    while True:
+        career = get_active_career()
+        fixture = get_db().execute(
+            """
+            SELECT 1 FROM fixtures
+            WHERE career_id=? AND season_number=? AND played=0 AND calendar_week=?
+              AND (home_club_id=? OR away_club_id=?) LIMIT 1
+            """,
+            (career_id, career["season_number"], career["calendar_week"], career["club_id"], career["club_id"]),
+        ).fetchone()
+        if fixture:
+            return
+        ok, message, _data = advance_calendar_week(career_id, seed=1701 + career["calendar_week"])
+        assert ok, message
+
+
 def test_prepared_match_is_sealed_and_does_not_mutate_career(tmp_path: Path):
     app = make_app(tmp_path)
     with app.app_context():
         career_id = create_career("Advay", "India", "ST")
+        advance_to_first_fixture(career_id)
         before = get_active_career()
         stats_before = dict(get_stats(career_id))
 
@@ -49,6 +68,7 @@ def test_event_reveal_is_sequential_and_retry_safe(tmp_path: Path):
     app = make_app(tmp_path)
     with app.app_context():
         career_id = create_career("Advay", "India", "CAM")
+        advance_to_first_fixture(career_id)
         session = prepare_next_match(career_id, seed=11)
 
         ok, _message, first = advance_match_session(session["public_id"], career_id, 0)
@@ -68,6 +88,7 @@ def test_completion_is_transactional_and_idempotent(tmp_path: Path):
     app = make_app(tmp_path)
     with app.app_context():
         career_id = create_career("Advay", "India", "ST")
+        advance_to_first_fixture(career_id)
         session = prepare_next_match(career_id, seed=19)
 
         ok, _message, payload = complete_match_session(
@@ -107,6 +128,7 @@ def test_report_is_derived_from_same_event_ledger(tmp_path: Path):
     app = make_app(tmp_path)
     with app.app_context():
         career_id = create_career("Advay", "India", "RW")
+        advance_to_first_fixture(career_id)
         session = prepare_next_match(career_id, seed=29)
         snapshot = json.loads(session["simulation_json"])
         events = snapshot["performance"]["events"]
@@ -133,6 +155,7 @@ def test_match_html_contains_no_final_result_payload(tmp_path: Path):
     app = make_app(tmp_path)
     with app.app_context():
         create_career("Advay", "India", "ST")
+        advance_to_first_fixture(get_active_career()["id"])
 
     client = app.test_client()
     response = client.post("/play", follow_redirects=True)
@@ -149,6 +172,7 @@ def test_match_html_contains_no_final_report_markup_or_payload(tmp_path: Path):
     app = make_app(tmp_path)
     with app.app_context():
         create_career("Advay", "India", "ST")
+        advance_to_first_fixture(get_active_career()["id"])
     client = app.test_client()
     play_response = client.post("/play", follow_redirects=False)
     assert play_response.status_code == 303
@@ -165,6 +189,7 @@ def test_report_is_pending_until_completion_then_frozen(tmp_path: Path):
     app = make_app(tmp_path)
     with app.app_context():
         career_id = create_career("Advay", "India", "CAM")
+        advance_to_first_fixture(career_id)
         session = prepare_next_match(career_id, seed=91)
         row = get_db().execute("SELECT report_json FROM match_sessions WHERE id = ?", (session["id"],)).fetchone()
         assert json.loads(row["report_json"])["status"] == "pending"

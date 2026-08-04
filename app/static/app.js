@@ -30,9 +30,15 @@
   });
 
   function navigateShortcut(key) {
-    if (key === "h") window.location.href = "/";
-    if (key === "y") window.location.href = "/career-history";
-    if (key === "w") window.location.href = "/world";
+    const destinations = {
+      h: "/",
+      k: "/calendar",
+      m: "/market",
+      f: "/finances",
+      y: "/career-history",
+      w: "/world",
+    };
+    if (destinations[key]) window.location.href = destinations[key];
   }
 
   async function setTrainingFocus(button) {
@@ -77,8 +83,15 @@
   });
 
   function submitContinue() {
-    const form = document.getElementById("play-form");
-    if (form) form.requestSubmit();
+    const control = document.querySelector(".keyboard-continue");
+    if (!control || control.disabled) return;
+    if (control.tagName === "A") {
+      window.location.href = control.href;
+      return;
+    }
+    const form = control.closest("form");
+    if (form) form.requestSubmit(control);
+    else control.click();
   }
 
   function setupDashboardShortcuts(event) {

@@ -100,7 +100,8 @@ def test_world_resolves_promotion_qualification_and_honours(tmp_path: Path):
         ok, message = finalize_season(career_id, seed=1234)
         assert ok, message
         career = get_active_career()
-        assert career["season_number"] == 2
+        assert career["season_number"] == 1
+        assert career["season_phase"] == "offseason"
         assert get_db().execute(
             "SELECT COUNT(*) AS n FROM world_season_outcomes WHERE career_id=? AND season_number=1",
             (career_id,),
