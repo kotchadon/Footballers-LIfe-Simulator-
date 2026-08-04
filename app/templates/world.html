@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block title %}Football World — Footy Career{% endblock %}
+{% block page_id %}world{% endblock %}
+{% block content %}
+<section class="world-hero">
+  <div>
+    <p class="eyebrow">GLOBAL FOOTBALL DATABASE · {{ career.season_label }}</p>
+    <h1>The football world now moves around you.</h1>
+    <p>Real club identities, independent league memberships, promotion and relegation, academy structures, continental qualification and permanent competition history.</p>
+  </div>
+  <div class="world-counts">
+    <div><strong>{{ world.countries|length }}</strong><span>countries</span></div>
+    <div><strong>{{ world.leagues|length }}</strong><span>leagues</span></div>
+    <div><strong>{{ world.competitions|length }}</strong><span>competitions</span></div>
+  </div>
+</section>
+
+<div class="world-layout">
+  <section class="panel world-leagues">
+    <div class="panel-heading"><div><p class="eyebrow">LEAGUE NETWORK</p><h2>Countries and divisions</h2></div><span class="pill">Your league · {{ career.league_code }}</span></div>
+    <div class="country-groups">
+      {% for country in world.countries %}
+      <article class="country-group">
+        <header><div><b>{{ country.name }}</b><small>{{ country.confederation }}</small></div><span>{{ country.club_count }} clubs</span></header>
+        <div class="league-links">
+          {% for league in world.leagues if league.country_code == country.code %}
+          <a href="{{ url_for('main.world_league', league_id=league.id) }}" class="{% if league.id == career.league_id %}active{% endif %}">
+            <span><b>{{ league.name }}</b><small>Tier {{ league.tier }} · REP {{ league.reputation }}</small></span>
+            <em>{{ league.current_clubs }}</em>
+          </a>
+          {% endfor %}
+        </div>
+      </article>
+      {% endfor %}
+    </div>
+  </section>
+
+  <aside class="world-sidebar">
+    <section class="panel">
+      <p class="eyebrow">YOUR PATHWAY</p>
+      <h2>{{ career.club_name }}</h2>
+      <div class="stat-lines">
+        <p><span>Country</span><strong>{{ career.country_name }}</strong></p>
+        <p><span>League</span><strong>{{ career.league_name }}</strong></p>
+        <p><span>Squad</span><strong>{{ career.squad_level|replace('_',' ')|title }}</strong></p>
+        <p><span>Manager trust</span><strong>{{ career.manager_trust }}/100</strong></p>
+        <p><span>Youth facilities</span><strong>{{ career.youth_rating }}</strong></p>
+        <p><span>Reserve strength</span><strong>{{ career.reserve_rating }}</strong></p>
+      </div>
+    </section>
+
+    <section class="panel">
+      <p class="eyebrow">CONTINENTAL ENTRIES</p>
+      {% if entries %}
+      <div class="world-mini-list">{% for entry in entries %}<p><b>{{ entry.competition_code }}</b><span>{{ entry.club_name }}</span></p>{% endfor %}</div>
+      {% else %}<p class="muted">Qualification places will be created when the first season resolves.</p>{% endif %}
+    </section>
+  </aside>
+</div>
+
+{% if selected %}
+<section class="panel selected-league">
+  <div class="panel-heading">
+    <div><p class="eyebrow">{{ selected.league.country_name }} · TIER {{ selected.league.tier }}</p><h2>{{ selected.league.name }}</h2></div>
+    <div class="league-rule-badges"><span>REP {{ selected.league.reputation }}</span><span>{{ selected.league.promotion_slots }} ↑</span><span>{{ selected.league.relegation_slots }} ↓</span></div>
+  </div>
+  <div class="club-database">
+    {% for club in selected.clubs %}
+    <article class="club-record {% if club.id == career.club_id %}active{% endif %}">
+      <div class="club-record-mark">{{ club.short_name[:3] }}</div>
+      <div><h3>{{ club.name }}</h3><p>{{ selected.league.country_name }} · {{ selected.league.name }}</p></div>
+      <dl><div><dt>Ability</dt><dd>{{ club.strength }}</dd></div><div><dt>Reputation</dt><dd>{{ club.reputation }}</dd></div><div><dt>Academy</dt><dd>{{ club.academy_development }}</dd></div></dl>
+    </article>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+<section class="panel competition-catalogue">
+  <div class="panel-heading"><div><p class="eyebrow">COMPETITION SYSTEM</p><h2>Domestic, continental and international trophies</h2></div><span class="muted">Foundation status shown honestly</span></div>
+  <div class="competition-grid">
+    {% for competition in world.competitions %}
+    <article><span>{{ competition.code }}</span><div><h3>{{ competition.name }}</h3><p>{{ competition.competition_type|replace('_',' ')|title }} · {{ competition.confederation }}</p></div><b class="status-{{ competition.simulation_status }}">{{ competition.simulation_status|replace('_',' ') }}</b></article>
+    {% endfor %}
+  </div>
+</section>
+
+{% if honours %}
+<section class="panel">
+  <p class="eyebrow">WORLD HONOURS ARCHIVE</p><h2>Resolved competition history</h2>
+  <div class="honours-grid">{% for honour in honours %}<article><b>{{ honour.competition_name }}</b><span>{{ honour.winner_name }}</span><small>{{ honour.season_number }} · beat {{ honour.runner_up_name }}</small></article>{% endfor %}</div>
+</section>
+{% endif %}
+{% endblock %}

@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#15233f">
   <title>{% block title %}Footy Career{% endblock %}</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css', v='4.1.0') }}">
-  <script defer src="{{ url_for('static', filename='app.js', v='4.1.0') }}"></script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css', v='5.0.0') }}">
+  <script defer src="{{ url_for('static', filename='app.js', v='5.0.0') }}"></script>
 </head>
 <body data-page="{% block page_id %}default{% endblock %}">
   <div class="page-shell">
@@ -18,6 +18,7 @@
       <nav class="nav-links" aria-label="Main navigation">
         <a href="{{ url_for('main.index') }}" data-shortcut-label="H">Dashboard</a>
         <a href="{{ url_for('main.career_history') }}" data-shortcut-label="Y">Career history</a>
+        <a href="{{ url_for('main.world') }}" data-shortcut-label="W">Football world</a>
       </nav>
       <button class="shortcut-button" type="button" data-open-shortcuts aria-label="Open keyboard shortcuts">
         <kbd>?</kbd><span>Shortcuts</span>
@@ -45,6 +46,7 @@
       <div><kbd>C</kbd><span>Continue to next match</span></div>
       <div><kbd>H</kbd><span>Dashboard</span></div>
       <div><kbd>Y</kbd><span>Career history</span></div>
+      <div><kbd>W</kbd><span>Football world</span></div>
       <div><kbd>?</kbd><span>Open this guide</span></div>
       <div><kbd>Space</kbd><span>Pause match replay</span></div>
       <div><kbd>1 / 2 / 3</kbd><span>Replay speed</span></div>
@@ -53,4 +55,3 @@
   </dialog>
 </body>
 </html>
-

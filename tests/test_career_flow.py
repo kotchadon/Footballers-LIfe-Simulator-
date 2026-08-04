@@ -74,11 +74,19 @@ def test_complete_season_and_rollover(tmp_path: Path):
         career = get_active_career()
         assert career["season_number"] == 1
 
-        for week in range(1, 15):
-            assert play_next_week(career_id, seed=week) is not None
+        max_week = get_db().execute(
+            "SELECT MAX(week) AS max_week FROM fixtures WHERE career_id=? AND season_number=1",
+            (career_id,),
+        ).fetchone()["max_week"]
+        seed = 1
+        while True:
+            report = play_next_week(career_id, seed=seed)
+            if report is None:
+                break
+            seed += 1
 
         career = get_active_career()
-        assert career["current_week"] == 15
+        assert career["current_week"] == max_week + 1
         success, _message = finalize_season(career_id, seed=7)
         assert success
 
@@ -91,4 +99,3 @@ def test_complete_season_and_rollover(tmp_path: Path):
             "SELECT COUNT(*) AS total FROM season_history WHERE career_id = ?", (career_id,)
         ).fetchone()["total"]
         assert history_count == 1
-

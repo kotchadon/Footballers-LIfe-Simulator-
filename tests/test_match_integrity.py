@@ -175,4 +175,3 @@ def test_report_is_pending_until_completion_then_frozen(tmp_path: Path):
         frozen = json.loads(row["report_json"])
         assert frozen["status"] == "completed"
         assert frozen["analysis"]["trace"]["event_count"] >= 2
-

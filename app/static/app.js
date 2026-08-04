@@ -32,6 +32,7 @@
   function navigateShortcut(key) {
     if (key === "h") window.location.href = "/";
     if (key === "y") window.location.href = "/career-history";
+    if (key === "w") window.location.href = "/world";
   }
 
   async function setTrainingFocus(button) {
@@ -416,4 +417,3 @@
     navigateShortcut(key);
   });
 })();
-

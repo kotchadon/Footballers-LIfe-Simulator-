@@ -13,6 +13,10 @@ CAREER_COLUMNS = {
     "injured_weeks": "INTEGER NOT NULL DEFAULT 0",
     "suspended_matches": "INTEGER NOT NULL DEFAULT 0",
     "yellow_card_accumulation": "INTEGER NOT NULL DEFAULT 0",
+    "league_id": "INTEGER",
+    "squad_level": "TEXT NOT NULL DEFAULT 'first_team'",
+    "manager_trust": "INTEGER NOT NULL DEFAULT 35",
+    "pathway_status": "TEXT NOT NULL DEFAULT 'senior_development'",
 }
 
 PLAYER_STATS_COLUMNS = {
@@ -23,7 +27,29 @@ PLAYER_STATS_COLUMNS = {
     "matches_missed_suspension": "INTEGER NOT NULL DEFAULT 0",
 }
 
-FIXTURE_COLUMNS = {"season_number": "INTEGER NOT NULL DEFAULT 1"}
+FIXTURE_COLUMNS = {
+    "season_number": "INTEGER NOT NULL DEFAULT 1",
+    "league_id": "INTEGER",
+    "competition_id": "INTEGER",
+    "stage": "TEXT NOT NULL DEFAULT 'league'",
+    "round_label": "TEXT NOT NULL DEFAULT ''",
+}
+
+CLUB_COLUMNS = {
+    "country_id": "INTEGER",
+    "league_id": "INTEGER",
+    "youth_rating": "INTEGER NOT NULL DEFAULT 50",
+    "reserve_rating": "INTEGER NOT NULL DEFAULT 50",
+    "is_real": "INTEGER NOT NULL DEFAULT 1",
+}
+
+STANDINGS_COLUMNS = {
+    "league_id": "INTEGER",
+    "season_number": "INTEGER NOT NULL DEFAULT 1",
+}
+
+TRANSFER_COLUMNS = {"to_league_id": "INTEGER"}
+SEASON_HISTORY_COLUMNS = {"league_id": "INTEGER"}
 
 MATCH_REPORT_COLUMNS = {
     "season_number": "INTEGER NOT NULL DEFAULT 1",
@@ -70,9 +96,13 @@ def _add_missing_columns(db, table, definitions):
 
 def migrate_existing_save(db):
     """Add newer fields without deleting an existing V1/V2 career save."""
+    _add_missing_columns(db, "clubs", CLUB_COLUMNS)
     _add_missing_columns(db, "careers", CAREER_COLUMNS)
     _add_missing_columns(db, "player_stats", PLAYER_STATS_COLUMNS)
     _add_missing_columns(db, "fixtures", FIXTURE_COLUMNS)
+    _add_missing_columns(db, "standings", STANDINGS_COLUMNS)
+    _add_missing_columns(db, "transfer_offers", TRANSFER_COLUMNS)
+    _add_missing_columns(db, "season_history", SEASON_HISTORY_COLUMNS)
     _add_missing_columns(db, "match_reports", MATCH_REPORT_COLUMNS)
     db.execute(
         "UPDATE player_stats SET minutes = starts * 90 WHERE minutes = 0 AND appearances > 0"
@@ -159,6 +189,18 @@ def migrate_existing_save(db):
     db.execute(
         "CREATE INDEX IF NOT EXISTS idx_match_sessions_public_id ON match_sessions(public_id)"
     )
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_clubs_league ON clubs(league_id, strength, reputation)"
+    )
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_world_memberships_league ON world_memberships(career_id, season_number, league_id)"
+    )
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_awards_career_season ON career_awards(career_id, season_number)"
+    )
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_competition_entries_season ON competition_entries(career_id, season_number, competition_id)"
+    )
     db.commit()
 
 
@@ -167,5 +209,7 @@ def init_db():
     schema_path = Path(__file__).with_name("schema.sql")
     db.executescript(schema_path.read_text())
     migrate_existing_save(db)
+    from .world import seed_world_database, migrate_legacy_world
+    seed_world_database(db)
+    migrate_legacy_world(db)
     db.commit()
-

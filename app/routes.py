@@ -10,6 +10,10 @@ from .services import (
     get_active_career,
     get_active_match_session,
     get_club_history,
+    get_career_awards,
+    get_competition_entries,
+    get_competition_honours,
+    get_current_league,
     get_finances,
     get_match_session_view,
     get_next_player_fixture,
@@ -20,6 +24,8 @@ from .services import (
     get_standings,
     get_stats,
     get_training_plan,
+    get_world_league,
+    get_world_overview,
     prepare_next_match,
     recover_player,
     season_is_complete,
@@ -57,6 +63,9 @@ def index():
         offers=get_pending_transfer_offers(career["id"]),
         training_plan=get_training_plan(career["id"]),
         season_complete=season_is_complete(career),
+        current_league=get_current_league(career),
+        awards=get_career_awards(career["id"], limit=8),
+        continental_entries=get_competition_entries(career["id"]),
     )
 
 
@@ -198,5 +207,40 @@ def career_history():
         seasons=get_season_history(career["id"]),
         clubs=get_club_history(career["id"]),
         finances=get_finances(career["id"]),
+        awards=get_career_awards(career["id"]),
+        honours=get_competition_honours(career["id"]),
     )
 
+
+@bp.get("/world")
+def world():
+    career = get_active_career()
+    if career is None:
+        return redirect(url_for("main.new_career"))
+    return render_template(
+        "world.html",
+        career=career,
+        world=get_world_overview(career["id"]),
+        selected=None,
+        entries=get_competition_entries(career["id"]),
+        honours=get_competition_honours(career["id"]),
+    )
+
+
+@bp.get("/world/league/<int:league_id>")
+def world_league(league_id):
+    career = get_active_career()
+    if career is None:
+        return redirect(url_for("main.new_career"))
+    selected = get_world_league(career["id"], league_id)
+    if selected is None:
+        flash("League not found.")
+        return redirect(url_for("main.world"))
+    return render_template(
+        "world.html",
+        career=career,
+        world=get_world_overview(career["id"]),
+        selected=selected,
+        entries=get_competition_entries(career["id"]),
+        honours=get_competition_honours(career["id"]),
+    )

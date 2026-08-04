@@ -65,4 +65,3 @@ def test_substitute_gets_reduced_minutes_and_entrance_event():
     )
     assert 3.5 <= performance["rating"] <= 10.0
     assert "comes off the bench" in performance["commentary"]
-

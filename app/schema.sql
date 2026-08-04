@@ -1,9 +1,53 @@
+CREATE TABLE IF NOT EXISTS countries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    code TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL UNIQUE,
+    confederation TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS leagues (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    code TEXT NOT NULL UNIQUE,
+    country_id INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    tier INTEGER NOT NULL,
+    reputation INTEGER NOT NULL,
+    team_count INTEGER NOT NULL,
+    promotion_slots INTEGER NOT NULL DEFAULT 0,
+    relegation_slots INTEGER NOT NULL DEFAULT 0,
+    playoff_slots INTEGER NOT NULL DEFAULT 0,
+    fully_playable INTEGER NOT NULL DEFAULT 1,
+    rules_json TEXT NOT NULL DEFAULT '{}',
+    UNIQUE(country_id, tier),
+    FOREIGN KEY (country_id) REFERENCES countries(id)
+);
+
+CREATE TABLE IF NOT EXISTS competitions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    code TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL,
+    country_id INTEGER,
+    competition_type TEXT NOT NULL,
+    confederation TEXT NOT NULL,
+    reputation INTEGER NOT NULL,
+    simulation_status TEXT NOT NULL DEFAULT 'catalogued',
+    format_json TEXT NOT NULL DEFAULT '{}',
+    FOREIGN KEY (country_id) REFERENCES countries(id)
+);
+
 CREATE TABLE IF NOT EXISTS clubs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL UNIQUE,
     short_name TEXT NOT NULL UNIQUE,
     strength INTEGER NOT NULL,
-    reputation INTEGER NOT NULL
+    reputation INTEGER NOT NULL,
+    country_id INTEGER,
+    league_id INTEGER,
+    youth_rating INTEGER NOT NULL DEFAULT 50,
+    reserve_rating INTEGER NOT NULL DEFAULT 50,
+    is_real INTEGER NOT NULL DEFAULT 1,
+    FOREIGN KEY (country_id) REFERENCES countries(id),
+    FOREIGN KEY (league_id) REFERENCES leagues(id)
 );
 
 CREATE TABLE IF NOT EXISTS careers (
@@ -29,8 +73,13 @@ CREATE TABLE IF NOT EXISTS careers (
     suspended_matches INTEGER NOT NULL DEFAULT 0,
     yellow_card_accumulation INTEGER NOT NULL DEFAULT 0,
     club_id INTEGER,
+    league_id INTEGER,
+    squad_level TEXT NOT NULL DEFAULT 'first_team',
+    manager_trust INTEGER NOT NULL DEFAULT 35,
+    pathway_status TEXT NOT NULL DEFAULT 'senior_development',
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (club_id) REFERENCES clubs(id)
+    FOREIGN KEY (club_id) REFERENCES clubs(id),
+    FOREIGN KEY (league_id) REFERENCES leagues(id)
 );
 
 CREATE TABLE IF NOT EXISTS player_attributes (
@@ -54,6 +103,10 @@ CREATE TABLE IF NOT EXISTS fixtures (
     played INTEGER NOT NULL DEFAULT 0,
     home_goals INTEGER,
     away_goals INTEGER,
+    league_id INTEGER,
+    competition_id INTEGER,
+    stage TEXT NOT NULL DEFAULT 'league',
+    round_label TEXT NOT NULL DEFAULT '',
     FOREIGN KEY (career_id) REFERENCES careers(id) ON DELETE CASCADE,
     FOREIGN KEY (home_club_id) REFERENCES clubs(id),
     FOREIGN KEY (away_club_id) REFERENCES clubs(id)
@@ -69,6 +122,8 @@ CREATE TABLE IF NOT EXISTS standings (
     goals_for INTEGER NOT NULL DEFAULT 0,
     goals_against INTEGER NOT NULL DEFAULT 0,
     points INTEGER NOT NULL DEFAULT 0,
+    league_id INTEGER,
+    season_number INTEGER NOT NULL DEFAULT 1,
     PRIMARY KEY (career_id, club_id),
     FOREIGN KEY (career_id) REFERENCES careers(id) ON DELETE CASCADE,
     FOREIGN KEY (club_id) REFERENCES clubs(id)
@@ -175,6 +230,7 @@ CREATE TABLE IF NOT EXISTS season_history (
     season_number INTEGER NOT NULL,
     season_label TEXT NOT NULL,
     club_id INTEGER NOT NULL,
+    league_id INTEGER,
     league_position INTEGER NOT NULL,
     league_points INTEGER NOT NULL,
     appearances INTEGER NOT NULL,
@@ -185,7 +241,8 @@ CREATE TABLE IF NOT EXISTS season_history (
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(career_id, season_number),
     FOREIGN KEY (career_id) REFERENCES careers(id) ON DELETE CASCADE,
-    FOREIGN KEY (club_id) REFERENCES clubs(id)
+    FOREIGN KEY (club_id) REFERENCES clubs(id),
+    FOREIGN KEY (league_id) REFERENCES leagues(id)
 );
 
 CREATE TABLE IF NOT EXISTS transfer_offers (
@@ -197,6 +254,7 @@ CREATE TABLE IF NOT EXISTS transfer_offers (
     wage INTEGER NOT NULL,
     signing_bonus INTEGER NOT NULL DEFAULT 0,
     status TEXT NOT NULL DEFAULT 'pending',
+    to_league_id INTEGER,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (career_id) REFERENCES careers(id) ON DELETE CASCADE,
     FOREIGN KEY (from_club_id) REFERENCES clubs(id),
@@ -227,3 +285,91 @@ CREATE TABLE IF NOT EXISTS finance_transactions (
 );
 
 
+
+CREATE TABLE IF NOT EXISTS club_units (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    club_id INTEGER NOT NULL,
+    unit_type TEXT NOT NULL CHECK(unit_type IN ('first_team', 'reserve', 'u18')),
+    strength INTEGER NOT NULL,
+    development_rating INTEGER NOT NULL,
+    UNIQUE(club_id, unit_type),
+    FOREIGN KEY (club_id) REFERENCES clubs(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS world_memberships (
+    career_id INTEGER NOT NULL,
+    season_number INTEGER NOT NULL,
+    club_id INTEGER NOT NULL,
+    league_id INTEGER NOT NULL,
+    PRIMARY KEY (career_id, season_number, club_id),
+    FOREIGN KEY (career_id) REFERENCES careers(id) ON DELETE CASCADE,
+    FOREIGN KEY (club_id) REFERENCES clubs(id),
+    FOREIGN KEY (league_id) REFERENCES leagues(id)
+);
+
+CREATE TABLE IF NOT EXISTS world_season_outcomes (
+    career_id INTEGER NOT NULL,
+    season_number INTEGER NOT NULL,
+    league_id INTEGER NOT NULL,
+    club_id INTEGER NOT NULL,
+    position INTEGER NOT NULL,
+    played INTEGER NOT NULL,
+    won INTEGER NOT NULL,
+    drawn INTEGER NOT NULL,
+    lost INTEGER NOT NULL,
+    goals_for INTEGER NOT NULL,
+    goals_against INTEGER NOT NULL,
+    points INTEGER NOT NULL,
+    promoted INTEGER NOT NULL DEFAULT 0,
+    relegated INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (career_id, season_number, league_id, club_id),
+    FOREIGN KEY (career_id) REFERENCES careers(id) ON DELETE CASCADE,
+    FOREIGN KEY (league_id) REFERENCES leagues(id),
+    FOREIGN KEY (club_id) REFERENCES clubs(id)
+);
+
+CREATE TABLE IF NOT EXISTS career_awards (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    career_id INTEGER NOT NULL,
+    season_number INTEGER NOT NULL,
+    week INTEGER,
+    competition_id INTEGER,
+    league_id INTEGER,
+    award_type TEXT NOT NULL,
+    award_name TEXT NOT NULL,
+    evidence_json TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(career_id, season_number, week, award_type, award_name),
+    FOREIGN KEY (career_id) REFERENCES careers(id) ON DELETE CASCADE,
+    FOREIGN KEY (competition_id) REFERENCES competitions(id),
+    FOREIGN KEY (league_id) REFERENCES leagues(id)
+);
+
+CREATE TABLE IF NOT EXISTS competition_honours (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    career_id INTEGER NOT NULL,
+    season_number INTEGER NOT NULL,
+    competition_id INTEGER NOT NULL,
+    winner_club_id INTEGER,
+    runner_up_club_id INTEGER,
+    notes TEXT NOT NULL DEFAULT '',
+    UNIQUE(career_id, season_number, competition_id),
+    FOREIGN KEY (career_id) REFERENCES careers(id) ON DELETE CASCADE,
+    FOREIGN KEY (competition_id) REFERENCES competitions(id),
+    FOREIGN KEY (winner_club_id) REFERENCES clubs(id),
+    FOREIGN KEY (runner_up_club_id) REFERENCES clubs(id)
+);
+
+
+CREATE TABLE IF NOT EXISTS competition_entries (
+    career_id INTEGER NOT NULL,
+    season_number INTEGER NOT NULL,
+    competition_id INTEGER NOT NULL,
+    club_id INTEGER NOT NULL,
+    qualification_source TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'qualified',
+    PRIMARY KEY (career_id, season_number, competition_id, club_id),
+    FOREIGN KEY (career_id) REFERENCES careers(id) ON DELETE CASCADE,
+    FOREIGN KEY (competition_id) REFERENCES competitions(id),
+    FOREIGN KEY (club_id) REFERENCES clubs(id)
+);
