@@ -14,10 +14,14 @@ INVESTMENT_INSTRUMENTS = (
 )
 
 PROPERTY_CATALOG = (
-    ("CITY_FLAT", "City apartment", 110_000, 230, 55, 54),
-    ("RENTAL_UNIT", "Rental unit", 240_000, 540, 120, 62),
-    ("LUXURY_HOME", "Luxury residence", 720_000, 0, 510, 76),
-    ("COMMERCIAL", "Small commercial property", 980_000, 2_150, 760, 84),
+    ("CITY_FLAT", "City apartment", 110_000, 0, 55, 42),
+    ("RENTAL_TOWNHOUSE", "Rental townhouse", 240_000, 540, 120, 56),
+    ("LUXURY_HOME", "Luxury residence", 720_000, 0, 510, 74),
+    ("COMMERCIAL", "Small commercial property", 980_000, 2_150, 760, 82),
+    ("PENTHOUSE", "City penthouse", 1_250_000, 0, 890, 86),
+    ("COASTAL_VILLA", "Coastal villa", 1_600_000, 0, 1_150, 90),
+    ("STUDIO_LOFT", "Studio loft", 165_000, 350, 80, 48),
+    ("SUBURBAN_HOME", "Suburban home", 420_000, 0, 240, 64),
 )
 
 ENDORSEMENT_BRANDS = (
@@ -575,7 +579,8 @@ def get_financial_dashboard(db, career_id: int) -> dict[str, Any]:
     position_value = sum(float(row["units"]) * float(row["current_price"]) for row in positions)
     properties = db.execute(
         """
-        SELECT op.*, pc.name, pc.weekly_rent, pc.weekly_maintenance, pc.purchase_price AS catalogue_price
+        SELECT op.*, pc.code, pc.name, pc.weekly_rent, pc.weekly_maintenance,
+               pc.purchase_price AS catalogue_price
         FROM owned_properties op JOIN property_catalog pc ON pc.id=op.property_id
         WHERE op.career_id=? AND op.status='owned' ORDER BY op.id
         """,
@@ -583,6 +588,14 @@ def get_financial_dashboard(db, career_id: int) -> dict[str, Any]:
     ).fetchall()
     property_value = sum(int(row["catalogue_price"]) for row in properties)
     property_catalog = db.execute("SELECT * FROM property_catalog ORDER BY purchase_price").fetchall()
+    location_row = db.execute(
+        """
+        SELECT co.code AS country_code, co.name AS country_name
+        FROM clubs c LEFT JOIN countries co ON co.id=c.country_id
+        WHERE c.id=?
+        """,
+        (career["club_id"],),
+    ).fetchone()
     transactions = db.execute(
         """
         SELECT * FROM finance_transactions WHERE career_id=?
@@ -608,15 +621,94 @@ def get_financial_dashboard(db, career_id: int) -> dict[str, Any]:
         """,
         (career_id,),
     ).fetchall()
+    country_code = (location_row["country_code"] if location_row and location_row["country_code"] else "INT")
+    country_name = (location_row["country_name"] if location_row and location_row["country_name"] else "International")
+    city_by_country = {
+        "ENG": "London", "ESP": "Madrid", "ITA": "Milan", "GER": "Berlin", "FRA": "Paris",
+        "POR": "Lisbon", "NED": "Amsterdam", "SCO": "Edinburgh", "IRL": "Dublin", "USA": "New York",
+        "BRA": "São Paulo", "ARG": "Buenos Aires", "SAU": "Riyadh", "JPN": "Tokyo", "AUS": "Sydney",
+        "IND": "Mumbai",
+    }
+    city = city_by_country.get(country_code, country_name)
+    property_meta = {
+        "CITY_FLAT": ("city-apartment.svg", "Primary residence", "A modern city base. No rental income; only weekly running costs."),
+        "RENTAL_TOWNHOUSE": ("rental-townhouse.svg", "Income property", "A residential rental producing weekly income after maintenance."),
+        "LUXURY_HOME": ("luxury-residence.svg", "Primary residence", "High-prestige home with significant running costs and no rental income."),
+        "COMMERCIAL": ("commercial-office.svg", "Income property", "Commercial tenancy with strong rent and higher maintenance exposure."),
+        "PENTHOUSE": ("penthouse.svg", "Primary residence", "Premium city living with no weekly rent income."),
+        "COASTAL_VILLA": ("coastal-villa.svg", "Primary residence", "Private lifestyle property with high upkeep and no rental income."),
+        "STUDIO_LOFT": ("studio-loft.svg", "Income property", "Entry-level rental asset with modest weekly income."),
+        "SUBURBAN_HOME": ("suburban-home.svg", "Primary residence", "A larger personal home outside the city centre."),
+    }
+    location_suffix = {
+        "CITY_FLAT": f"{city} Central", "RENTAL_TOWNHOUSE": f"{city} North", "LUXURY_HOME": f"{city} Hills",
+        "COMMERCIAL": f"{city} Business District", "PENTHOUSE": f"{city} Skyline", "COASTAL_VILLA": f"{country_name} Coast",
+        "STUDIO_LOFT": f"{city} Arts Quarter", "SUBURBAN_HOME": f"Greater {city}",
+    }
+    # Rotating local listings: the catalogue exists permanently, but only five properties are marketed each week.
+    market_rng = random.Random(f"property:{career_id}:{career['season_number']}:{career['calendar_week']}:{country_code}")
+    shuffled_catalog = list(property_catalog)
+    market_rng.shuffle(shuffled_catalog)
+    available_ids = {int(row["id"]) for row in shuffled_catalog[:5]}
+    owned_ids = {int(row["property_id"]) for row in properties}
+    decorated_catalog = []
+    for row in property_catalog:
+        item = dict(row)
+        image, use_type, summary = property_meta.get(row["code"], ("city-apartment.svg", "Property", "Local property listing."))
+        item.update({
+            "image": image,
+            "use_type": use_type,
+            "summary": summary,
+            "location": location_suffix.get(row["code"], city),
+            "is_owned": int(row["id"]) in owned_ids,
+            "is_available": int(row["id"]) in available_ids,
+            "expires_in": 1 + market_rng.randint(1, 4),
+            "net_weekly": int(row["weekly_rent"]) - int(row["weekly_maintenance"]),
+        })
+        decorated_catalog.append(item)
+    decorated_properties = []
+    for row in properties:
+        item = dict(row)
+        image, use_type, summary = property_meta.get(row["code"], ("city-apartment.svg", "Property", "Owned property."))
+        item.update({"image": image, "use_type": use_type, "summary": summary, "location": location_suffix.get(row["code"], city), "net_weekly": int(row["weekly_rent"]) - int(row["weekly_maintenance"])})
+        decorated_properties.append(item)
+    price_history = {}
+    for instrument in prices:
+        rows = db.execute(
+            """
+            SELECT season_number, calendar_week, price FROM investment_prices
+            WHERE instrument_id=? ORDER BY season_number DESC, calendar_week DESC LIMIT 16
+            """,
+            (instrument["id"],),
+        ).fetchall()
+        values = [round(float(row["price"]), 2) for row in reversed(rows)]
+        if len(values) == 1:
+            values = [values[0]] * 4
+        price_history[int(instrument["id"])] = values
+    instrument_meta = {
+        "GIDX": {"icon": "index", "risk": "Moderate", "description": "Broad market exposure with steadier long-term movement."},
+        "TECH": {"icon": "chip", "risk": "High", "description": "Higher volatility and stronger growth potential."},
+        "SPRT": {"icon": "stadium", "risk": "Medium-high", "description": "Sport, media and entertainment sector exposure."},
+        "BOND": {"icon": "shield", "risk": "Low", "description": "Defensive fund with lower volatility."},
+    }
+    decorated_instruments = []
+    for row in prices:
+        item = dict(row)
+        item.update(instrument_meta.get(row["code"], {"icon": "chart", "risk": "Variable", "description": "Virtual market instrument."}))
+        item["history"] = price_history.get(int(row["id"]), [float(row["price"])])
+        first, last = item["history"][0], item["history"][-1]
+        item["change_pct"] = round(((last-first)/first)*100, 2) if first else 0.0
+        decorated_instruments.append(item)
     return {
         "career": career,
         "profile": profile,
         "contract": contract,
         "endorsements": endorsements,
-        "instruments": prices,
+        "instruments": decorated_instruments,
         "positions": positions,
-        "properties": properties,
-        "property_catalog": property_catalog,
+        "properties": decorated_properties,
+        "property_catalog": decorated_catalog,
+        "property_location": {"country": country_name, "country_code": country_code, "city": city},
         "transactions": transactions,
         "totals": totals,
         "categories": categories,

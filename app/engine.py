@@ -688,18 +688,25 @@ def build_post_match_analysis(
     if not strengths:
         strengths.append(_ranked_insight(
             50,
-            "Baseline work rate",
-            "Completed the assigned role without a single standout positive event dominating the performance.",
-            [_evidence("Touches", str(metrics["touches"])), _evidence("Progressive actions", str(metrics["progressive_actions"]))],
+            "Reliable role execution",
+            "Stayed connected to the match and completed the core responsibilities of the role, even without a decisive goal or assist.",
+            [
+                _evidence("Touches", str(metrics["touches"])),
+                _evidence("Pass accuracy", f"{metrics['pass_accuracy']:.0f}%"),
+                _evidence("Progressive actions", str(metrics["progressive_actions"])),
+            ],
         ))
     if not gaps:
-        primary = "shooting" if position == "ST" else "passing" if position in {"CAM", "CM", "CDM"} else "dribbling" if position in {"LW", "RW"} else "defending"
         gaps.append(_ranked_insight(
             40,
             "No major breakdown",
-            "No single weakness materially damaged the performance; the next gains should come from role-specific refinement.",
-            [_evidence("Rating", f"{rating:.1f}")],
-            primary,
+            "No single weakness materially damaged the performance. The next step is balanced role refinement rather than correcting a specific failure.",
+            [
+                _evidence("Rating", f"{rating:.1f}"),
+                _evidence("Minutes", str(minutes)),
+                _evidence("Progressive actions", str(metrics["progressive_actions"])),
+            ],
+            "balanced",
         ))
 
     action_map = {

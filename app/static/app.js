@@ -21,12 +21,173 @@
     );
   }
 
+
+  if ("scrollRestoration" in history) history.scrollRestoration = "manual";
+  const scrollStorageKey = `footy:scroll:${window.location.pathname}`;
+
+  function saveScroll() {
+    try { sessionStorage.setItem(scrollStorageKey, String(window.scrollY || 0)); } catch (_error) {}
+  }
+
+  function restoreScroll() {
+    let value = null;
+    try { value = sessionStorage.getItem(scrollStorageKey); } catch (_error) {}
+    if (value === null) return;
+    const y = Number(value);
+    if (!Number.isFinite(y)) return;
+    const apply = () => window.scrollTo({top: y, left: 0, behavior: "auto"});
+    requestAnimationFrame(apply);
+    setTimeout(apply, 40);
+    setTimeout(apply, 180);
+    try { sessionStorage.removeItem(scrollStorageKey); } catch (_error) {}
+  }
+
+  function hashNumber(value) {
+    return Array.from(String(value || "FC")).reduce((hash, char) => ((hash << 5) - hash + char.charCodeAt(0)) | 0, 0);
+  }
+
+  function decorateCrests(root = document) {
+    root.querySelectorAll("[data-crest]").forEach((node) => {
+      const hash = Math.abs(hashNumber(node.dataset.crest));
+      const hueA = hash % 360;
+      const hueB = (hueA + 48 + (hash % 64)) % 360;
+      node.style.background = `linear-gradient(145deg, hsl(${hueA} 68% 46%), hsl(${hueB} 72% 34%))`;
+    });
+    root.querySelectorAll(".sponsor-logo[data-logo-text]").forEach((node) => {
+      const hash = Math.abs(hashNumber(node.dataset.logoText));
+      node.style.background = `linear-gradient(145deg, hsl(${hash % 360} 65% 42%), hsl(${(hash + 75) % 360} 70% 30%))`;
+    });
+  }
+
+  function countryFlag(code) {
+    const map = {ENG:"🇬🇧", ESP:"🇪🇸", ITA:"🇮🇹", GER:"🇩🇪", FRA:"🇫🇷", POR:"🇵🇹", NED:"🇳🇱", SCO:"🏴󠁧󠁢󠁳󠁣󠁴󠁿", IRL:"🇮🇪", USA:"🇺🇸", BRA:"🇧🇷", ARG:"🇦🇷", SAU:"🇸🇦", JPN:"🇯🇵", AUS:"🇦🇺", IND:"🇮🇳", LGC:"⚽"};
+    return map[String(code || "").toUpperCase()] || "🌐";
+  }
+
+  function decorateFlags(root = document) {
+    root.querySelectorAll("[data-country-flag]").forEach((node) => { node.textContent = countryFlag(node.dataset.countryFlag); });
+  }
+
+  function drawChart(canvas) {
+    let values = [];
+    try { values = JSON.parse(canvas.dataset.series || "[]").map(Number).filter(Number.isFinite); } catch (_error) { values = []; }
+    if (!values.length) return;
+    while (values.length < 4) values.unshift(values[0]);
+    const rect = canvas.getBoundingClientRect();
+    const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+    const width = Math.max(280, rect.width || 520);
+    const height = Math.max(150, rect.height || 160);
+    canvas.width = Math.round(width * dpr);
+    canvas.height = Math.round(height * dpr);
+    const ctx = canvas.getContext("2d");
+    ctx.scale(dpr, dpr);
+    const pad = {left: 18, right: 18, top: 16, bottom: 20};
+    const innerW = width - pad.left - pad.right;
+    const innerH = height - pad.top - pad.bottom;
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    const range = Math.max(0.5, max - min);
+    const points = values.map((value, index) => ({
+      x: pad.left + (index / Math.max(1, values.length - 1)) * innerW,
+      y: pad.top + (1 - (value - min) / range) * innerH,
+    }));
+    const positive = canvas.dataset.positive === "true";
+    const line = positive ? "#667dff" : "#e34863";
+    const fillTop = positive ? "rgba(102,125,255,.30)" : "rgba(227,72,99,.27)";
+    const fillBottom = positive ? "rgba(102,125,255,0)" : "rgba(227,72,99,0)";
+
+    function paint(progress) {
+      ctx.clearRect(0, 0, width, height);
+      ctx.strokeStyle = "rgba(86,102,133,.12)";
+      ctx.lineWidth = 1;
+      for (let i=0; i<4; i+=1) {
+        const y = pad.top + (i / 3) * innerH;
+        ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(width-pad.right, y); ctx.stroke();
+      }
+      const visible = Math.max(2, Math.ceil(points.length * progress));
+      const active = points.slice(0, visible);
+      const gradient = ctx.createLinearGradient(0, pad.top, 0, height-pad.bottom);
+      gradient.addColorStop(0, fillTop); gradient.addColorStop(1, fillBottom);
+      ctx.beginPath();
+      active.forEach((point, index) => index ? ctx.lineTo(point.x, point.y) : ctx.moveTo(point.x, point.y));
+      const last = active[active.length-1];
+      ctx.lineTo(last.x, height-pad.bottom); ctx.lineTo(active[0].x, height-pad.bottom); ctx.closePath();
+      ctx.fillStyle = gradient; ctx.fill();
+      ctx.beginPath();
+      active.forEach((point, index) => index ? ctx.lineTo(point.x, point.y) : ctx.moveTo(point.x, point.y));
+      ctx.strokeStyle = line; ctx.lineWidth = 3; ctx.lineJoin = "round"; ctx.lineCap = "round"; ctx.stroke();
+      ctx.beginPath(); ctx.arc(last.x, last.y, 4.5, 0, Math.PI*2); ctx.fillStyle=line; ctx.fill();
+    }
+    const start = performance.now();
+    function frame(now) {
+      const progress = Math.min(1, (now-start)/720);
+      paint(1 - Math.pow(1-progress, 3));
+      if (progress < 1) requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+  }
+
+  function drawCharts(root = document) {
+    root.querySelectorAll("canvas.market-chart").forEach(drawChart);
+  }
+
+  function extractFlash(doc) {
+    const flash = doc.querySelector(".flash");
+    return flash?.textContent?.trim() || "Action completed.";
+  }
+
+  function initialiseLiveForms(root = document) {
+    root.querySelectorAll("form[data-live-form]").forEach((form) => {
+      if (form.dataset.liveBound === "true") return;
+      form.dataset.liveBound = "true";
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const scope = form.closest("[data-live-scope]");
+        if (!scope) { saveScroll(); form.submit(); return; }
+        const submitter = event.submitter || form.querySelector("button[type='submit'], button:not([type])");
+        if (submitter) submitter.disabled = true;
+        const y = window.scrollY;
+        try {
+          const response = await fetch(form.action, {method: (form.method || "POST").toUpperCase(), body: new FormData(form), headers: {"X-Requested-With":"fetch", "Accept":"text/html"}});
+          const html = await response.text();
+          if (!response.ok) throw new Error("The action failed.");
+          const doc = new DOMParser().parseFromString(html, "text/html");
+          const replacement = doc.querySelector(`#${CSS.escape(scope.id)}`);
+          if (!replacement) throw new Error("The updated screen could not be loaded.");
+          scope.replaceWith(replacement);
+          initialiseVisualUI(replacement);
+          window.scrollTo({top:y, behavior:"auto"});
+          showToast(extractFlash(doc));
+        } catch (error) {
+          if (submitter) submitter.disabled = false;
+          showToast(error.message || "Action failed.", true);
+        }
+      });
+    });
+  }
+
+  function initialiseVisualUI(root = document) {
+    decorateCrests(root);
+    decorateFlags(root);
+    drawCharts(root);
+    initialiseLiveForms(root);
+  }
+
   const shortcutDialog = document.getElementById("shortcut-dialog");
   document.querySelectorAll("[data-open-shortcuts]").forEach((button) => {
     button.addEventListener("click", () => shortcutDialog?.showModal());
   });
   document.querySelectorAll("[data-close-shortcuts]").forEach((button) => {
     button.addEventListener("click", () => shortcutDialog?.close());
+  });
+  document.querySelectorAll("[data-toggle-nav]").forEach((button) => {
+    button.addEventListener("click", () => document.body.classList.toggle("nav-open"));
+  });
+  document.querySelectorAll(".side-nav a").forEach((link) => {
+    const current = window.location.pathname;
+    const path = new URL(link.href, window.location.origin).pathname;
+    if (current === path || (path !== "/" && current.startsWith(path))) link.classList.add("active");
+    link.addEventListener("click", saveScroll);
   });
 
   function navigateShortcut(key) {
@@ -38,7 +199,7 @@
       y: "/career-history",
       w: "/world",
     };
-    if (destinations[key]) window.location.href = destinations[key];
+    if (destinations[key]) { saveScroll(); window.location.href = destinations[key]; }
   }
 
   async function setTrainingFocus(button) {
@@ -222,6 +383,11 @@
       const hero = el("div", "report-hero panel");
       const heroCopy = el("div");
       heroCopy.append(el("p", "eyebrow", "FULL-TIME ANALYSIS"), el("h2", "", analysis.headline), el("p", "", analysis.verdict));
+      const summaryChips = el("div", "offer-chips");
+      [["Final score", `${finalScore.home}–${finalScore.away}`], ["Minutes", report.minutes], ["Output", `${report.goals}G · ${report.assists}A`]].forEach(([label, value]) => {
+        const chip = el("span", ""); chip.textContent = `${label}: ${value}`; summaryChips.append(chip);
+      });
+      heroCopy.append(summaryChips);
       const rating = el("div", "report-rating");
       rating.append(el("small", "", "RATING"), el("strong", "", report.rating ? Number(report.rating).toFixed(1) : "—"));
       hero.append(heroCopy, rating);
@@ -262,7 +428,7 @@
       root.append(storyGrid);
 
       const insightGrid = el("div", "report-grid three-column");
-      [["WHAT WORKED", analysis.strengths, false], ["PERFORMANCE GAPS", analysis.gaps, false], ["COACHING ACTIONS", analysis.coaching_actions, true]].forEach(([heading, items, includeFocus]) => {
+      [["POSITIVE IMPACT", analysis.strengths, false], ["PERFORMANCE REVIEW", analysis.gaps, false], ["NEXT TRAINING BLOCK", analysis.coaching_actions, true]].forEach(([heading, items, includeFocus]) => {
         const panel = el("section", "panel");
         panel.append(el("p", "eyebrow", heading));
         const list = el("div", "report-list");
@@ -392,6 +558,11 @@
     else timer = window.setTimeout(tick, 450);
     return {togglePause, setSpeed, finish};
   }
+
+  initialiseVisualUI(document);
+  restoreScroll();
+  window.addEventListener("resize", () => { window.clearTimeout(window.__footyResize); window.__footyResize = window.setTimeout(() => drawCharts(document), 120); });
+  document.addEventListener("submit", (event) => { if (!event.target.matches("form[data-live-form]")) saveScroll(); });
 
   const replay = page === "match" ? setupMatchReplay() : null;
 

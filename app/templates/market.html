@@ -2,14 +2,31 @@
 {% block title %}Transfer Market — Footy Career{% endblock %}
 {% block page_id %}market{% endblock %}
 {% block content %}
-<section class="section-hero"><p class="eyebrow">AGENT & RECRUITMENT DESK</p><h1>Transfer market</h1><p>Formal offers, monitoring clubs, squad roles, contract length and financial terms are separated clearly.</p></section>
-<section class="metrics metrics-ticket"><div><span>Overall</span><strong>{{ career.overall }}</strong></div><div><span>Reputation</span><strong>{{ career.reputation }}</strong></div><div><span>Agent quality</span><strong>{{ career.agent_quality }}</strong></div><div><span>Current wage</span><strong>${{ "{:,}".format(career.wage) }}</strong></div><div><span>Formal offers</span><strong>{{ market.offers|length }}</strong></div><div><span>Watching</span><strong>{{ market.watching|length }}</strong></div></section>
+<div id="market-app" data-live-scope="market-app">
+  <section class="page-hero market-hero">
+    <div><p class="eyebrow">AGENT & RECRUITMENT DESK</p><h1>Transfer market</h1><p class="hero-kicker">Your next move should feel important.</p><p>Formal offers, monitoring clubs, role promises and financial terms without the spreadsheet look.</p></div>
+    <div class="hero-icon"><svg><use href="#i-market"></use></svg></div>
+  </section>
 
-<section class="panel"><div class="panel-heading"><div><p class="eyebrow">ACTIVE SEARCH</p><h2>Ask the agent to contact the market</h2><p class="muted">Available during transfer windows. The service costs roughly half a weekly wage and may create formal offers or monitoring interest.</p></div><form method="post" action="{{ url_for('main.market_agent_search') }}"><button class="button primary" {% if not market.window_open %}disabled{% endif %}>Run agent search</button></form></div></section>
+  <section class="metric-strip"><article><span>Overall</span><strong>{{ career.overall }}</strong><small>Current ability</small></article><article><span>Reputation</span><strong>{{ career.reputation }}</strong><small>Market visibility</small></article><article><span>Agent quality</span><strong>{{ career.agent_quality }}</strong><small>Representation</small></article><article class="featured"><span>Current wage</span><strong>${{ "{:,}".format(career.wage) }}</strong><small>Per week</small></article></section>
 
-<section class="panel"><p class="eyebrow">FORMAL OFFERS</p><h2>{{ market.offers|length }} contracts ready for a decision</h2>
-{% if market.offers %}<div class="offer-grid">{% for offer in market.offers %}<article class="offer-card detailed"><p class="muted">{{ offer.to_country_name }} · {{ offer.to_league_name }}</p><h3>{{ offer.to_name }}</h3><div class="stat-lines"><p><span>Role</span><strong>{{ offer.squad_role }}</strong></p><p><span>Contract</span><strong>{{ offer.contract_years }} years</strong></p><p><span>Club strength / reputation</span><strong>{{ offer.to_strength }} / {{ offer.to_reputation }}</strong></p><p><span>Interest score</span><strong>{{ offer.interest_score }}</strong></p></div><p>{{ offer.agent_recommendation }}</p><div class="offer-money"><strong>${{ "{:,}".format(offer.wage) }}/week</strong><span>${{ "{:,}".format(offer.signing_bonus) }} signing bonus</span></div><div class="actions"><form method="post" action="{{ url_for('main.accept_transfer', offer_id=offer.id) }}"><button class="button primary">Accept</button></form><form method="post" action="{{ url_for('main.decline_transfer', offer_id=offer.id) }}"><button class="button secondary">Decline</button></form></div></article>{% endfor %}</div>{% else %}<p class="muted">No formal contract is currently waiting.</p>{% endif %}
-</section>
+  <section class="surface agent-search-card">
+    <div class="section-title"><span class="section-icon"><svg><use href="#i-market"></use></svg></span><div><p class="eyebrow">ACTIVE SEARCH</p><h2>Ask your agent to contact clubs</h2><p class="muted">Available during transfer windows. The agent targets realistic clubs based on your form, ability and reputation.</p></div></div>
+    <form data-live-form method="post" action="{{ url_for('main.market_agent_search') }}"><button class="btn btn-primary" {% if not market.window_open %}disabled{% endif %}>Run agent search</button></form>
+  </section>
 
-<section class="panel"><p class="eyebrow">CLUBS WATCHING</p><h2>{{ market.watching|length }} recruitment departments tracking you</h2>{% if market.watching %}<div class="watch-list">{% for offer in market.watching %}<article><div><strong>{{ offer.to_name }}</strong><span>{{ offer.to_country_name }} · {{ offer.to_league_name }}</span></div><div><b>{{ offer.squad_role }}</b><span>Interest {{ offer.interest_score }}</span></div></article>{% endfor %}</div>{% else %}<p class="muted">No monitoring records yet.</p>{% endif %}</section>
+  <section class="surface">
+    <div class="section-head"><div class="section-title"><span class="section-icon"><svg><use href="#i-sponsor"></use></svg></span><div><p class="eyebrow">FORMAL OFFERS</p><h2>{{ market.offers|length }} contracts ready</h2></div></div><span class="live-pill"><i></i>{{ 'Window open' if market.window_open else 'Window closed' }}</span></div>
+    {% if market.offers %}<div class="transfer-offer-grid">{% for offer in market.offers %}<article class="transfer-offer-card">
+      <div class="club-crest" data-crest="{{ offer.to_name }}"><span>{{ offer.to_name[:2]|upper }}</span></div>
+      <div class="offer-club"><p>{{ offer.to_country_name }} · {{ offer.to_league_name }}</p><h3>{{ offer.to_name }}</h3><div class="offer-chips"><span>{{ offer.squad_role }}</span><span>{{ offer.contract_years }}-year contract</span><span>Interest {{ offer.interest_score }}</span></div><p class="agent-note">{{ offer.agent_recommendation }}</p></div>
+      <div class="offer-finance"><span>Weekly wage</span><strong>${{ "{:,}".format(offer.wage) }}</strong><small>${{ "{:,}".format(offer.signing_bonus) }} signing bonus</small><div class="offer-rating"><span>Club strength</span><b>{{ offer.to_strength }}</b><span>Reputation</span><b>{{ offer.to_reputation }}</b></div><div class="card-actions"><form data-live-form method="post" action="{{ url_for('main.accept_transfer', offer_id=offer.id) }}"><button class="btn btn-primary">Accept offer</button></form><form data-live-form method="post" action="{{ url_for('main.decline_transfer', offer_id=offer.id) }}"><button class="btn btn-ghost">Decline</button></form></div></div>
+    </article>{% endfor %}</div>{% else %}<div class="empty-state"><svg><use href="#i-market"></use></svg><h3>No formal contract waiting</h3><p>Run an agent search during an open transfer window or improve your performances.</p></div>{% endif %}
+  </section>
+
+  <section class="surface">
+    <div class="section-title"><span class="section-icon"><svg><use href="#i-world"></use></svg></span><div><p class="eyebrow">CLUBS WATCHING</p><h2>{{ market.watching|length }} recruitment departments tracking you</h2></div></div>
+    {% if market.watching %}<div class="watching-grid">{% for offer in market.watching %}<article><div class="club-crest compact" data-crest="{{ offer.to_name }}"><span>{{ offer.to_name[:2]|upper }}</span></div><div><h3>{{ offer.to_name }}</h3><p>{{ offer.to_country_name }} · {{ offer.to_league_name }}</p></div><div class="watch-score"><strong>{{ offer.interest_score }}</strong><span>interest</span></div><span class="role-chip">{{ offer.squad_role }}</span></article>{% endfor %}</div>{% else %}<p class="muted">No monitoring records yet.</p>{% endif %}
+  </section>
+</div>
 {% endblock %}
