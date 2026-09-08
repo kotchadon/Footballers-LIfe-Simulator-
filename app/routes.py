@@ -17,6 +17,7 @@ from .services import (
     get_calendar_context,
     get_calendar_dashboard,
     get_career_awards,
+    get_career_command_center,
     get_club_history,
     get_competition_entries,
     get_competition_honours,
@@ -51,9 +52,25 @@ from .services import (
 bp = Blueprint("main", __name__)
 
 
+@bp.context_processor
+def inject_career_shell():
+    career = get_active_career()
+    if career is None:
+        return {"career_shell": None}
+    return {"career_shell": get_career_command_center(career["id"])}
+
+
+@bp.get("/api/career-state")
+def career_state_api():
+    career = get_active_career()
+    if career is None:
+        return jsonify({"ok": False, "message": "Create a career first."}), 404
+    return jsonify({"ok": True, "state": get_career_command_center(career["id"])})
+
+
 @bp.after_app_request
 def disable_dynamic_cache(response):
-    if request.path.startswith(("/match/", "/api/matches/", "/finances", "/market", "/calendar")):
+    if request.path.startswith(("/match/", "/api/matches/", "/api/career-state", "/finances", "/market", "/calendar")):
         response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
         response.headers["Pragma"] = "no-cache"
         response.headers["Expires"] = "0"
@@ -228,7 +245,7 @@ def end_season():
     if career:
         _success, message = finalize_season(career["id"])
         flash(message)
-    return redirect(url_for("main.index"))
+    return redirect(request.form.get("next") or url_for("main.index"))
 
 
 @bp.post("/season/start")
@@ -237,7 +254,7 @@ def season_start():
     if career:
         _success, message = start_next_season(career["id"])
         flash(message)
-    return redirect(url_for("main.index"))
+    return redirect(request.form.get("next") or url_for("main.index"))
 
 
 @bp.post("/offseason/action")

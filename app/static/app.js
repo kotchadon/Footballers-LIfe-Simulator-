@@ -68,6 +68,121 @@
     root.querySelectorAll("[data-country-flag]").forEach((node) => { node.textContent = countryFlag(node.dataset.countryFlag); });
   }
 
+
+  function assetManifest() {
+    return window.FOOTY_ASSETS || {clubs:{}, leaguesByCode:{}, leaguesByName:{}, nationalsByCode:{}, nationalsByName:{}, competitions:{}, sponsors:{}};
+  }
+
+  function logoPath(relative) {
+    if (!relative) return "";
+    if (/^(https?:)?\//.test(relative)) return relative;
+    return `/static/assets/real/${relative.replace(/^\/+/, "")}`;
+  }
+
+  function applyRealLogos(root = document) {
+    const manifest = assetManifest();
+    root.querySelectorAll("img[data-logo-kind]").forEach((img) => {
+      if (img.dataset.assetBound === "true") return;
+      img.dataset.assetBound = "true";
+      const kind = img.dataset.logoKind;
+      const name = img.dataset.logoName || "";
+      const code = img.dataset.logoCode || "";
+      let relative = "";
+      if (kind === "club") relative = manifest.clubs?.[name];
+      else if (kind === "league-code") relative = manifest.leaguesByCode?.[code] || manifest.leaguesByName?.[name];
+      else if (kind === "league-name") relative = manifest.leaguesByName?.[name];
+      else if (kind === "national") relative = manifest.nationalsByCode?.[code] || manifest.nationalsByName?.[name];
+      else if (kind === "competition") relative = manifest.competitions?.[code];
+      const frame = img.closest(".real-logo-frame, .national-badge, .mini-real-logo");
+      if (!relative) {
+        img.hidden = true;
+        frame?.classList.add("logo-fallback");
+        return;
+      }
+      img.addEventListener("load", () => {
+        img.hidden = false;
+        frame?.classList.add("logo-loaded");
+        frame?.classList.remove("logo-fallback");
+      }, {once:true});
+      img.addEventListener("error", () => {
+        img.hidden = true;
+        frame?.classList.add("logo-fallback");
+      }, {once:true});
+      img.src = logoPath(relative);
+    });
+
+    root.querySelectorAll("img[data-sponsor-logo]").forEach((img) => {
+      if (img.dataset.assetBound === "true") return;
+      img.dataset.assetBound = "true";
+      const relative = manifest.sponsors?.[img.dataset.sponsorLogo];
+      if (!relative) { img.hidden = true; return; }
+      img.src = relative.startsWith("/") ? relative : `/static/${relative}`;
+      img.addEventListener("load", () => img.closest(".sponsor-visual")?.classList.add("logo-loaded"), {once:true});
+      img.addEventListener("error", () => { img.hidden = true; }, {once:true});
+    });
+  }
+
+  function drawDetailedChart(canvas) {
+    let values = [];
+    try { values = JSON.parse(canvas.dataset.series || "[]").map(Number).filter(Number.isFinite); } catch (_error) { values = []; }
+    if (!values.length) return;
+    while (values.length < 6) values.unshift(values[0]);
+    const rect = canvas.getBoundingClientRect();
+    const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+    const width = Math.max(320, rect.width || 560);
+    const height = Math.max(220, rect.height || 240);
+    canvas.width = Math.round(width * dpr); canvas.height = Math.round(height * dpr);
+    const ctx = canvas.getContext("2d"); ctx.setTransform(dpr,0,0,dpr,0,0);
+    const pad = {left:46,right:18,top:22,bottom:34};
+    const iw=width-pad.left-pad.right, ih=height-pad.top-pad.bottom;
+    const min=Math.min(...values), max=Math.max(...values), range=Math.max(.5,max-min);
+    const points=values.map((v,i)=>({x:pad.left+(i/Math.max(1,values.length-1))*iw,y:pad.top+(1-(v-min)/range)*ih,value:v,index:i}));
+    const positive=canvas.dataset.positive === "true";
+    const line=positive?"#63a8ff":"#ff5f7f";
+    let progress=0;
+    function paint(p){
+      ctx.clearRect(0,0,width,height);
+      ctx.font="11px ui-sans-serif, system-ui"; ctx.fillStyle="rgba(185,199,225,.62)"; ctx.strokeStyle="rgba(142,159,190,.16)"; ctx.lineWidth=1;
+      for(let i=0;i<5;i++){const y=pad.top+(i/4)*ih;ctx.beginPath();ctx.moveTo(pad.left,y);ctx.lineTo(width-pad.right,y);ctx.stroke();const val=max-(i/4)*range;ctx.fillText(`$${val.toFixed(1)}`,4,y+4);}
+      const visible=Math.max(2,Math.ceil(points.length*p)); const active=points.slice(0,visible); const last=active[active.length-1];
+      const grad=ctx.createLinearGradient(0,pad.top,0,height-pad.bottom);grad.addColorStop(0,positive?"rgba(99,168,255,.36)":"rgba(255,95,127,.34)");grad.addColorStop(1,"rgba(12,24,47,0)");
+      ctx.beginPath();active.forEach((pt,i)=>i?ctx.lineTo(pt.x,pt.y):ctx.moveTo(pt.x,pt.y));ctx.lineTo(last.x,height-pad.bottom);ctx.lineTo(active[0].x,height-pad.bottom);ctx.closePath();ctx.fillStyle=grad;ctx.fill();
+      ctx.beginPath();active.forEach((pt,i)=>i?ctx.lineTo(pt.x,pt.y):ctx.moveTo(pt.x,pt.y));ctx.strokeStyle=line;ctx.lineWidth=3;ctx.lineCap="round";ctx.lineJoin="round";ctx.stroke();
+      ctx.beginPath();ctx.arc(last.x,last.y,5,0,Math.PI*2);ctx.fillStyle=line;ctx.fill();ctx.strokeStyle="#fff";ctx.lineWidth=2;ctx.stroke();
+      ctx.fillStyle="rgba(185,199,225,.7)";ctx.fillText("12 weeks ago",pad.left,height-10);ctx.textAlign="right";ctx.fillText("current",width-pad.right,height-10);ctx.textAlign="left";
+    }
+    const start=performance.now();
+    function frame(now){progress=Math.min(1,(now-start)/900);paint(1-Math.pow(1-progress,3));if(progress<1)requestAnimationFrame(frame);}
+    requestAnimationFrame(frame);
+
+    const tooltip=canvas.parentElement?.querySelector(".chart-tooltip");
+    canvas.addEventListener("mousemove",(event)=>{if(!tooltip)return;const box=canvas.getBoundingClientRect();const x=event.clientX-box.left;let nearest=points.reduce((best,pt)=>Math.abs(pt.x-x)<Math.abs(best.x-x)?pt:best,points[0]);tooltip.hidden=false;tooltip.textContent=`Week -${values.length-1-nearest.index}: $${nearest.value.toFixed(2)}`;tooltip.style.left=`${nearest.x}px`;tooltip.style.top=`${nearest.y}px`;});
+    canvas.addEventListener("mouseleave",()=>{if(tooltip)tooltip.hidden=true;});
+  }
+
+  function drawCashflowDonuts(root = document) {
+    root.querySelectorAll(".cashflow-rings").forEach((wrap)=>{
+      const canvas=wrap.querySelector("canvas"); if(!canvas)return;
+      const income=Math.max(0,Number(wrap.dataset.income||0)), expenses=Math.max(0,Number(wrap.dataset.expenses||0)); const total=Math.max(1,income+expenses);
+      const dpr=Math.max(1,Math.min(2,window.devicePixelRatio||1)); const size=260; canvas.width=size*dpr;canvas.height=size*dpr;const ctx=canvas.getContext("2d");ctx.setTransform(dpr,0,0,dpr,0,0);
+      const start=-Math.PI/2; let progress=0;
+      function paint(p){ctx.clearRect(0,0,size,size);ctx.lineWidth=22;ctx.lineCap="round";ctx.strokeStyle="rgba(124,145,183,.15)";ctx.beginPath();ctx.arc(130,130,88,0,Math.PI*2);ctx.stroke();const incomeAngle=(income/total)*Math.PI*2*p;ctx.strokeStyle="#5fa8ff";ctx.beginPath();ctx.arc(130,130,88,start,start+incomeAngle);ctx.stroke();ctx.strokeStyle="#ff5f7f";ctx.beginPath();ctx.arc(130,130,88,start+incomeAngle,start+Math.PI*2*p);ctx.stroke();}
+      const t0=performance.now();function frame(now){progress=Math.min(1,(now-t0)/850);paint(1-Math.pow(1-progress,3));if(progress<1)requestAnimationFrame(frame);}requestAnimationFrame(frame);
+    });
+  }
+
+  function drawReportRadar(canvas) {
+    let values=[];try{values=JSON.parse(canvas.dataset.values||"[]").map(Number);}catch(_error){return;}if(values.length<5)return;
+    const labels=["Finishing","Creation","Passing","Duels","Discipline"];const dpr=Math.max(1,Math.min(2,window.devicePixelRatio||1));const size=320;canvas.width=size*dpr;canvas.height=size*dpr;const ctx=canvas.getContext("2d");ctx.setTransform(dpr,0,0,dpr,0,0);const cx=160,cy=158,r=112;
+    function point(i,scale){const a=-Math.PI/2+i*Math.PI*2/5;return{x:cx+Math.cos(a)*r*scale,y:cy+Math.sin(a)*r*scale};}
+    function paint(p){ctx.clearRect(0,0,size,size);for(let ring=1;ring<=4;ring++){ctx.beginPath();for(let i=0;i<5;i++){const q=point(i,ring/4);i?ctx.lineTo(q.x,q.y):ctx.moveTo(q.x,q.y);}ctx.closePath();ctx.strokeStyle="rgba(137,159,198,.22)";ctx.stroke();}for(let i=0;i<5;i++){const q=point(i,1);ctx.beginPath();ctx.moveTo(cx,cy);ctx.lineTo(q.x,q.y);ctx.strokeStyle="rgba(137,159,198,.16)";ctx.stroke();ctx.font="12px ui-sans-serif,system-ui";ctx.fillStyle="#8fa2c5";ctx.textAlign=q.x<cx-10?"right":q.x>cx+10?"left":"center";ctx.fillText(labels[i],q.x,q.y+(q.y<cy?-8:16));}ctx.beginPath();values.forEach((v,i)=>{const q=point(i,Math.max(.08,Math.min(1,v/100))*p);i?ctx.lineTo(q.x,q.y):ctx.moveTo(q.x,q.y);});ctx.closePath();ctx.fillStyle="rgba(99,168,255,.22)";ctx.fill();ctx.strokeStyle="#63a8ff";ctx.lineWidth=3;ctx.stroke();}
+    const t0=performance.now();function frame(now){const p=Math.min(1,(now-t0)/760);paint(1-Math.pow(1-p,3));if(p<1)requestAnimationFrame(frame);}requestAnimationFrame(frame);
+  }
+
+  function drawReportVisuals(root = document) {
+    root.querySelectorAll("canvas.performance-radar").forEach(drawReportRadar);
+  }
+
   function drawChart(canvas) {
     let values = [];
     try { values = JSON.parse(canvas.dataset.series || "[]").map(Number).filter(Number.isFinite); } catch (_error) { values = []; }
@@ -129,11 +244,38 @@
 
   function drawCharts(root = document) {
     root.querySelectorAll("canvas.market-chart").forEach(drawChart);
+    root.querySelectorAll("canvas.market-chart-pro").forEach(drawDetailedChart);
+    drawCashflowDonuts(root);
+    drawReportVisuals(root);
   }
 
   function extractFlash(doc) {
     const flash = doc.querySelector(".flash");
     return flash?.textContent?.trim() || "Action completed.";
+  }
+
+  function replaceCareerChrome(doc) {
+    [["career-hud", "[data-career-hud]"], ["career-sidebar-card", "[data-career-sidebar]"]].forEach(([id, selector]) => {
+      const current = document.getElementById(id);
+      const next = doc.querySelector(selector);
+      if (current && next) current.replaceWith(next);
+    });
+  }
+
+  function showActionReceipt(message, isError = false) {
+    showToast(message, isError);
+    const hud = document.querySelector("[data-career-hud]");
+    if (!hud || !message) return;
+    let receipt = hud.querySelector(".career-action-receipt");
+    if (!receipt) {
+      receipt = document.createElement("div");
+      receipt.className = "career-action-receipt";
+      hud.append(receipt);
+    }
+    receipt.classList.toggle("error", isError);
+    receipt.textContent = message;
+    window.clearTimeout(showActionReceipt.timer);
+    showActionReceipt.timer = window.setTimeout(() => receipt.classList.add("settled"), 2400);
   }
 
   function initialiseLiveForms(root = document) {
@@ -145,22 +287,33 @@
         const scope = form.closest("[data-live-scope]");
         if (!scope) { saveScroll(); form.submit(); return; }
         const submitter = event.submitter || form.querySelector("button[type='submit'], button:not([type])");
-        if (submitter) submitter.disabled = true;
+        const originalLabel = submitter?.textContent;
+        if (submitter) { submitter.disabled = true; submitter.dataset.originalLabel = originalLabel || ""; submitter.textContent = "Working…"; }
+        form.setAttribute("aria-busy", "true");
         const y = window.scrollY;
+        const scopeId = scope.id;
         try {
-          const response = await fetch(form.action, {method: (form.method || "POST").toUpperCase(), body: new FormData(form), headers: {"X-Requested-With":"fetch", "Accept":"text/html"}});
+          const response = await fetch(form.action, {
+            method: (form.method || "POST").toUpperCase(),
+            body: new FormData(form),
+            headers: {"X-Requested-With":"fetch", "Accept":"text/html"},
+            redirect: "follow",
+          });
           const html = await response.text();
           if (!response.ok) throw new Error("The action failed.");
           const doc = new DOMParser().parseFromString(html, "text/html");
-          const replacement = doc.querySelector(`#${CSS.escape(scope.id)}`);
-          if (!replacement) throw new Error("The updated screen could not be loaded.");
+          const replacement = doc.querySelector(`#${CSS.escape(scopeId)}`);
+          if (!replacement) throw new Error("The action completed, but the updated screen did not match this page.");
+          const message = extractFlash(doc);
           scope.replaceWith(replacement);
+          replaceCareerChrome(doc);
           initialiseVisualUI(replacement);
           window.scrollTo({top:y, behavior:"auto"});
-          showToast(extractFlash(doc));
+          showActionReceipt(message);
         } catch (error) {
-          if (submitter) submitter.disabled = false;
-          showToast(error.message || "Action failed.", true);
+          form.removeAttribute("aria-busy");
+          if (submitter) { submitter.disabled = false; submitter.textContent = originalLabel || "Try again"; }
+          showActionReceipt(error.message || "Action failed.", true);
         }
       });
     });
@@ -169,8 +322,11 @@
   function initialiseVisualUI(root = document) {
     decorateCrests(root);
     decorateFlags(root);
+    applyRealLogos(root);
     drawCharts(root);
     initialiseLiveForms(root);
+    root.querySelectorAll(".surface, .property-listing, .investment-terminal, .club-card-v64").forEach((node,index)=>{node.style.setProperty("--reveal-delay",`${Math.min(index,12)*35}ms`);node.classList.add("reveal-ready");});
+    requestAnimationFrame(()=>root.querySelectorAll(".reveal-ready").forEach(node=>node.classList.add("revealed")));
   }
 
   const shortcutDialog = document.getElementById("shortcut-dialog");
@@ -299,6 +455,34 @@
     const completeEndpoint = stage.dataset.completeEndpoint;
     const totalEvents = Number(stage.dataset.eventCount || 0);
     const alreadyCompleted = stage.dataset.sessionStatus === "completed";
+    const pitchBall = document.getElementById("pitch-ball");
+    const pitchLabel = document.getElementById("pitch-action-label");
+    const goalFlash = document.getElementById("goal-flash");
+    const pitch = document.getElementById("live-pitch");
+
+    function animatePitchEvent(item) {
+      if (!pitchBall || !pitch || !item) return;
+      const kind = String(item.kind || "moment");
+      const sequence = Number(item.sequence || 0);
+      const attackingHome = ((sequence + (playerTeamHome ? 0 : 1)) % 2) === 0;
+      const targets = {
+        goal: attackingHome ? [91,50] : [9,50],
+        shot: attackingHome ? [82,36 + (sequence%3)*14] : [18,36 + (sequence%3)*14],
+        save: attackingHome ? [88,44] : [12,56],
+        corner: attackingHome ? [96,8 + (sequence%2)*84] : [4,8 + (sequence%2)*84],
+        card: [48 + (sequence%2)*8, 44 + (sequence%3)*8],
+        injury: [42 + (sequence%4)*6, 35 + (sequence%3)*14],
+        substitution: [50,92],
+        full_time: [50,50],
+      };
+      const target = targets[kind] || [20 + ((sequence*19)%60), 18 + ((sequence*31)%64)];
+      pitchBall.style.setProperty("--ball-x", `${target[0]}%`);
+      pitchBall.style.setProperty("--ball-y", `${target[1]}%`);
+      pitchBall.classList.remove("kick"); void pitchBall.offsetWidth; pitchBall.classList.add("kick");
+      if (pitchLabel) { pitchLabel.textContent = item.text || kind.replace(/_/g," "); pitchLabel.dataset.kind = kind; }
+      pitch.dataset.eventKind = kind;
+      if (kind === "goal" && goalFlash) { goalFlash.classList.remove("show"); void goalFlash.offsetWidth; goalFlash.classList.add("show"); }
+    }
 
     let cursor = 0;
     let paused = false;
@@ -325,6 +509,7 @@
 
     function addEvent(item, instant = false) {
       if (!item) return;
+      animatePitchEvent(item);
       if (timeline.querySelector(`[data-sequence="${item.sequence}"]`)) return;
       const row = document.createElement("article");
       row.className = `timeline-event ${item.kind || "moment"}`;
@@ -392,6 +577,26 @@
       rating.append(el("small", "", "RATING"), el("strong", "", report.rating ? Number(report.rating).toFixed(1) : "—"));
       hero.append(heroCopy, rating);
       root.append(hero);
+
+      const visualGrid = el("div", "report-visual-grid-v64");
+      const radarPanel = el("section", "panel report-radar-panel");
+      radarPanel.append(el("p", "eyebrow", "PERFORMANCE SHAPE"), el("h2", "", "Match influence radar"));
+      const radar = el("canvas", "performance-radar");
+      const shotAccuracy = report.metrics.shots ? (report.metrics.shots_on_target / report.metrics.shots) * 100 : 50;
+      const creativeScore = Math.min(100, Number(report.metrics.key_passes || 0) * 18 + Number(report.assists || 0) * 28);
+      const passingScore = Math.max(0, Math.min(100, Number(report.metrics.pass_accuracy || 0)));
+      const duelScore = report.metrics.duels ? (report.metrics.duels_won / report.metrics.duels) * 100 : 50;
+      const disciplineScore = Math.max(0, 100 - Number(report.yellow_cards || 0) * 24 - Number(report.red_cards || 0) * 70 - Number(report.metrics.fouls_committed || 0) * 7);
+      radar.dataset.values = JSON.stringify([shotAccuracy, creativeScore, passingScore, duelScore, disciplineScore]);
+      radarPanel.append(radar);
+      const mapPanel = el("section", "panel report-activity-panel");
+      mapPanel.append(el("p", "eyebrow", "ACTIVITY MAP"), el("h2", "", "Where your influence landed"));
+      const map = el("div", "report-pitch-map");
+      const markerCount = Math.min(12, Math.max(3, Number(report.metrics.shots || 0) + Number(report.metrics.key_passes || 0) + Number(report.metrics.dribbles_completed || 0)));
+      for (let index=0; index<markerCount; index+=1) { const dot=el("i", index < Number(report.metrics.shots || 0) ? "shot-dot" : "action-dot"); dot.style.left=`${18 + ((index*29 + Number(report.minutes||0))%68)}%`; dot.style.top=`${14 + ((index*37 + Number(report.rating||0)*10)%72)}%`; map.append(dot); }
+      mapPanel.append(map, el("p", "muted", "Visual activity estimate derived from recorded shots, chances and successful actions."));
+      visualGrid.append(radarPanel, mapPanel);
+      root.append(visualGrid);
 
       const storyGrid = el("div", "report-grid");
       const story = el("section", "panel");
@@ -469,6 +674,7 @@
       scoreCaption.textContent = "FINAL SCORE";
       reportLock.remove();
       reportMount.replaceChildren(buildReport(payload));
+      initialiseVisualUI(reportMount);
       reportMount.scrollIntoView({behavior: speed === 3 ? "auto" : "smooth", block: "start"});
       pauseButton.textContent = "Replay complete";
       pauseButton.disabled = true;

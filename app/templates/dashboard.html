@@ -1,7 +1,45 @@
 {% extends "base.html" %}
-{% block title %}{{ career.player_name }} — Footy Career{% endblock %}
-{% block page_id %}dashboard{% endblock %}
+{% block title %}{{ career.player_name }} — Footy Career</div>
+{% endblock %}
+{% block page_id %}dashboard</div>
+{% endblock %}
 {% block content %}
+<div id="dashboard-app" data-live-scope>
+<section class="career-command" id="career-now">
+  <div class="career-command-main">
+    <p class="eyebrow">CAREER COMMAND CENTRE</p>
+    <div class="command-status-row">
+      <span class="command-phase">{{ career_shell.phase|replace('_',' ')|title }}</span>
+      <span>Week {{ career_shell.week }} of 52</span>
+      <span>{{ career.club_name }}</span>
+      <span>{{ career.league_name }}</span>
+    </div>
+    <h1>{{ career_shell.primary.label }}</h1>
+    <p class="command-explainer">{{ career_shell.primary.detail }}</p>
+    <div class="command-actions">
+      {% if career_shell.primary.kind == 'resume_match' %}
+        <a class="button primary keyboard-continue" href="{{ url_for('main.match_centre', session_id=career_shell.primary.session_id) }}">Resume match</a>
+      {% elif career_shell.primary.kind == 'play_match' %}
+        <form method="post" action="{{ url_for('main.play') }}"><button class="button primary keyboard-continue">Play scheduled match</button></form>
+      {% elif career_shell.primary.kind == 'close_season' %}
+        <form data-live-form method="post" action="{{ url_for('main.end_season') }}"><input type="hidden" name="next" value="{{ url_for('main.index') }}"><button class="button primary keyboard-continue">Close competitive season</button></form>
+      {% elif career_shell.primary.kind == 'start_season' %}
+        <form data-live-form method="post" action="{{ url_for('main.season_start') }}"><input type="hidden" name="next" value="{{ url_for('main.index') }}"><button class="button primary keyboard-continue">Begin next pre-season</button></form>
+      {% else %}
+        <form data-live-form method="post" action="{{ url_for('main.calendar_advance') }}"><input type="hidden" name="next" value="{{ url_for('main.index') }}"><button class="button primary keyboard-continue">Advance one week</button></form>
+      {% endif %}
+      <a class="button secondary" href="{{ url_for('main.calendar_view') }}">See full calendar</a>
+    </div>
+  </div>
+  <aside class="decision-queue">
+    <div class="decision-queue-head"><span>DECISION QUEUE</span><strong>{{ career_shell.decisions|length }}</strong></div>
+    {% for item in career_shell.decisions %}
+      <article class="decision-item decision-{{ item.kind }}"><i></i><div><b>{{ item.label }}</b><small>{{ item.detail }}</small></div></article>
+    {% else %}
+      <article class="decision-item"><i></i><div><b>No urgent decisions</b><small>You can focus on development or advance the calendar.</small></div></article>
+    {% endfor %}
+  </aside>
+</section>
 <section class="player-hero calendar-hero">
   <div class="player-identity">
     <p class="eyebrow">{{ career.season_label }} · CALENDAR WEEK {{ career.calendar_week }} OF 52 · {{ career.season_phase|upper }}</p>
@@ -44,19 +82,17 @@
     {% endif %}
 
     {% if active_match %}
-      <a class="button primary keyboard-continue" href="{{ url_for('main.match_centre', session_id=active_match.public_id) }}">Resume sealed match</a>
+      <p class="muted">A sealed match is currently in progress. The command centre above is locked to that match until it is completed.</p>
     {% elif calendar_context.can_play %}
       {% set match = calendar_context.fixtures_this_week[0] %}
       <div class="fixture-line"><span>{{ match.home_name }}</span><b>vs</b><span>{{ match.away_name }}</span></div>
-      <form method="post" action="{{ url_for('main.play') }}"><button class="button primary keyboard-continue" type="submit">Play club match</button></form>
+      <p class="muted">This fixture blocks weekly progression and is already surfaced as your primary action above.</p>
     {% elif season_complete and career.season_phase != 'offseason' %}
-      <p>The league programme is complete. Close it before entering the summer block.</p>
-      <form method="post" action="{{ url_for('main.end_season') }}"><button class="button primary keyboard-continue">Close competitive season</button></form>
+      <p class="muted">League fixtures are complete. Season closure is the next required career step.</p>
     {% elif calendar_context.calendar_complete and career.season_phase == 'offseason' %}
-      <form method="post" action="{{ url_for('main.season_start') }}"><button class="button primary keyboard-continue">Begin next pre-season</button></form>
+      <p class="muted">The 52-week calendar is complete. The next season can be created from the command centre.</p>
     {% else %}
-      <p>No club fixture is scheduled. International duty, recovery and weekly finances will be processed when the week advances.</p>
-      <form method="post" action="{{ url_for('main.calendar_advance') }}"><input type="hidden" name="next" value="{{ url_for('main.index') }}"><button class="button primary keyboard-continue">Advance one week</button></form>
+      <p class="muted">This is a non-match week. Advancing it will resolve development, finances and international duty together.</p>
     {% endif %}
     <a class="text-link" href="{{ url_for('main.calendar_view') }}">Open full 52-week calendar →</a>
   </section>
@@ -119,5 +155,6 @@
 <div class="dashboard-grid">
   <section class="panel"><p class="eyebrow">RECENT MATCHES</p>{% if reports %}<div class="report-list">{% for report in reports %}<article><strong>{{ report.home_name }} {{ report.home_goals }}–{{ report.away_goals }} {{ report.away_name }}</strong><span>{{ report.selection_status|title }} · {{ report.player_minutes }} min · {{ report.player_rating }} · {{ report.player_goals }}G {{ report.player_assists }}A</span></article>{% endfor %}</div>{% else %}<p class="muted">No matches played yet.</p>{% endif %}</section>
   <section class="panel"><p class="eyebrow">CAREER TOTALS</p><div class="stat-lines"><p><span>Appearances</span><strong>{{ stats.appearances }}</strong></p><p><span>Goals / assists</span><strong>{{ stats.goals }} / {{ stats.assists }}</strong></p><p><span>Average rating</span><strong>{{ stats.average_rating }}</strong></p><p><span>Wins / draws / losses</span><strong>{{ stats.wins }} / {{ stats.draws }} / {{ stats.losses }}</strong></p></div><a class="text-link" href="{{ url_for('main.career_history') }}">Complete history →</a></section>
+</div>
 </div>
 {% endblock %}

@@ -1827,3 +1827,129 @@ def request_agent_market_search(career_id, seed=None):
     success, message, count = transfer_request_agent_search(db, career, stats, rng)
     db.commit() if success else db.rollback()
     return success, message, count
+
+
+def get_career_command_center(career_id):
+    """Return one canonical snapshot of what the player should understand and do next.
+
+    This is intentionally presentation-friendly but contains no Flask/UI logic. Every
+    screen can render the same career state without rebuilding lifecycle rules in
+    templates or JavaScript.
+    """
+    db = get_db()
+    career = db.execute("SELECT * FROM careers WHERE id=?", (career_id,)).fetchone()
+    if career is None:
+        return None
+
+    context = get_week_context(db, career)
+    active_match = get_active_match_session(career_id)
+    complete = season_is_complete(career)
+    market = transfer_get_market_dashboard(db, career_id)
+    finance = economy_get_financial_dashboard(db, career_id)
+
+    pending_endorsements = db.execute(
+        "SELECT COUNT(*) AS n FROM endorsements WHERE career_id=? AND status='pending'",
+        (career_id,),
+    ).fetchone()["n"]
+    selected_programme = db.execute(
+        """
+        SELECT title FROM career_week_actions
+        WHERE career_id=? AND season_number=? AND calendar_week=?
+        ORDER BY id DESC LIMIT 1
+        """,
+        (career_id, career["season_number"], career["calendar_week"]),
+    ).fetchone()
+
+    fixtures = list(context.get("fixtures_this_week") or []) if context else []
+    events = list(context.get("events") or []) if context else []
+    current_week = context.get("week") if context else None
+    current_week_data = dict(current_week) if current_week else None
+    event_data = [dict(item) for item in events[:4]]
+
+    if active_match is not None:
+        primary = {
+            "kind": "resume_match",
+            "label": "Resume active match",
+            "detail": "A sealed match is already in progress. Finish or skip it before anything else advances.",
+            "session_id": active_match["public_id"],
+            "tone": "urgent",
+        }
+    elif context and context.get("can_play") and fixtures:
+        fixture = fixtures[0]
+        primary = {
+            "kind": "play_match",
+            "label": f"Play {fixture['home_name']} vs {fixture['away_name']}",
+            "detail": "This club fixture is the blocking event for the current week. The calendar cannot advance until it is resolved.",
+            "tone": "match",
+        }
+    elif complete and career["season_phase"] != "offseason":
+        primary = {
+            "kind": "close_season",
+            "label": "Close competitive season",
+            "detail": "The league programme is complete. Finalise standings, awards and the summer transition.",
+            "tone": "season",
+        }
+    elif context and context.get("calendar_complete") and career["season_phase"] == "offseason":
+        primary = {
+            "kind": "start_season",
+            "label": "Begin next pre-season",
+            "detail": "The 52-week cycle is complete and the next football season is ready to be created.",
+            "tone": "season",
+        }
+    else:
+        primary = {
+            "kind": "advance_week",
+            "label": "Advance one week",
+            "detail": "No blocking club fixture remains. Finances, development and any international duty will resolve together.",
+            "tone": "calendar",
+        }
+
+    decisions = []
+    if active_match is not None:
+        decisions.append({"kind": "match", "label": "Finish active match", "detail": "All other weekly progression is locked.", "priority": 100})
+    elif fixtures:
+        decisions.append({"kind": "match", "label": "Club match waiting", "detail": f"{fixtures[0]['home_name']} vs {fixtures[0]['away_name']}", "priority": 90})
+    if market.get("offers"):
+        decisions.append({"kind": "market", "label": f"{len(market['offers'])} transfer offer(s)", "detail": "Formal contracts are waiting for a decision.", "priority": 70})
+    elif market.get("watching"):
+        decisions.append({"kind": "market", "label": f"{len(market['watching'])} club(s) watching", "detail": "Recruitment interest is developing.", "priority": 35})
+    if pending_endorsements:
+        decisions.append({"kind": "finance", "label": f"{pending_endorsements} sponsorship offer(s)", "detail": "Commercial terms are waiting in Finances.", "priority": 60})
+    if career["season_phase"] in {"offseason", "preseason"} and selected_programme is None and not fixtures:
+        decisions.append({"kind": "calendar", "label": "Choose a player programme", "detail": "Use this free week deliberately before advancing it.", "priority": 50})
+    if career["fitness"] < 60:
+        decisions.append({"kind": "development", "label": "Fitness needs attention", "detail": f"Current fitness is {career['fitness']}%. A recovery focus may be safer.", "priority": 45})
+    decisions.sort(key=lambda item: item["priority"], reverse=True)
+
+    last_transaction = db.execute(
+        """
+        SELECT category, amount, description, calendar_week
+        FROM finance_transactions WHERE career_id=? ORDER BY id DESC LIMIT 1
+        """,
+        (career_id,),
+    ).fetchone()
+    recent_reports = get_recent_reports(career_id, 1)
+    last_match = recent_reports[0] if recent_reports else None
+
+    return {
+        "week": int(career["calendar_week"]),
+        "week_total": 52,
+        "progress_pct": round(max(0, min(52, int(career["calendar_week"]))) / 52 * 100, 1),
+        "phase": career["season_phase"],
+        "season_label": career["season_label"],
+        "current_week": current_week_data,
+        "events": event_data,
+        "primary": primary,
+        "decisions": decisions[:5],
+        "selected_programme": selected_programme["title"] if selected_programme else None,
+        "market_offer_count": len(market.get("offers") or []),
+        "watching_count": len(market.get("watching") or []),
+        "pending_endorsements": int(pending_endorsements or 0),
+        "cash": int(career["money"]),
+        "net_worth": int(finance.get("net_worth") or career["money"]),
+        "fitness": int(career["fitness"]),
+        "morale": int(career["morale"]),
+        "stress": int(career["stress"]),
+        "last_transaction": dict(last_transaction) if last_transaction else None,
+        "last_match": dict(last_match) if last_match else None,
+    }

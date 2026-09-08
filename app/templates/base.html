@@ -5,10 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#08111f">
   <title>{% block title %}Footy Career{% endblock %}</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css', v='6.3.0') }}">
-  <script defer src="{{ url_for('static', filename='app.js', v='6.3.0') }}"></script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css', v='6.6.0') }}">
+  <script defer src="{{ url_for('static', filename='assets/real/logo-manifest.js', v='6.5.0') }}"></script>
+  <script defer src="{{ url_for('static', filename='app.js', v='6.5.0') }}"></script>
 </head>
 <body data-page="{% block page_id %}default{% endblock %}">
+  <div class="ambient-stadium" aria-hidden="true"><i></i><i></i><i></i></div>
   <svg class="svg-sprite" aria-hidden="true">
     <symbol id="i-ball" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m12 6 3 2.2-1.2 3.5h-3.6L9 8.2 12 6ZM6.4 10.4l3.8 1.3 1.8 3.1-2.3 3M17.6 10.4l-3.8 1.3-1.8 3.1 2.3 3M8.6 5.8 9 8.2 6.4 10.4 4 9.6M15.4 5.8 15 8.2l2.6 2.2 2.4-.8M9.7 18h4.6l1.3 2"/></symbol>
     <symbol id="i-home" viewBox="0 0 24 24"><path d="m3 11 9-8 9 8"/><path d="M5 10v10h14V10M9 20v-6h6v6"/></symbol>
@@ -45,6 +47,14 @@
         <a href="{{ url_for('main.world') }}"><svg><use href="#i-world"></use></svg><span>Football world</span><kbd>W</kbd></a>
         <a href="{{ url_for('main.career_history') }}"><svg><use href="#i-history"></use></svg><span>History</span><kbd>Y</kbd></a>
       </nav>
+      {% if career_shell %}
+      <section class="sidebar-career-card" id="career-sidebar-card" data-career-sidebar>
+        <div class="sidebar-career-head"><span>CAREER NOW</span><strong>W{{ career_shell.week }}/52</strong></div>
+        <div class="mini-progress"><i style="width:{{ career_shell.progress_pct }}%"></i></div>
+        <b>{{ career_shell.primary.label }}</b>
+        <small>{{ career_shell.phase|replace('_',' ')|title }} · {{ career_shell.season_label }}</small>
+      </section>
+      {% endif %}
       <button class="shortcut-button" type="button" data-open-shortcuts><kbd>?</kbd><span>Keyboard shortcuts</span></button>
     </aside>
 
@@ -53,6 +63,28 @@
         <a class="mobile-brand" href="{{ url_for('main.index') }}"><svg><use href="#i-ball"></use></svg><strong>FOOTY</strong></a>
         <button type="button" data-toggle-nav aria-label="Open navigation">☰</button>
       </header>
+      {% if career_shell %}
+      <section class="career-hud" id="career-hud" data-career-hud>
+        <div class="career-hud-state">
+          <span class="hud-kicker">{{ career_shell.season_label }} · WEEK {{ career_shell.week }} OF 52</span>
+          <strong>{{ career_shell.current_week.headline if career_shell.current_week else 'Season transition' }}</strong>
+          <small>{{ career_shell.phase|replace('_',' ')|title }}</small>
+        </div>
+        <div class="career-hud-progress" aria-label="Season progress">
+          <div><span>Season timeline</span><b>{{ career_shell.progress_pct|round|int }}%</b></div>
+          <div class="hud-progress-track"><i style="width:{{ career_shell.progress_pct }}%"></i></div>
+        </div>
+        <div class="career-hud-next">
+          <span>NEXT REQUIRED ACTION</span>
+          <strong>{{ career_shell.primary.label }}</strong>
+          {% if career_shell.primary.kind == 'resume_match' %}
+          <a href="{{ url_for('main.match_centre', session_id=career_shell.primary.session_id) }}">Resume →</a>
+          {% else %}
+          <a href="{{ url_for('main.index') }}#career-now">Resolve →</a>
+          {% endif %}
+        </div>
+      </section>
+      {% endif %}
       <main class="container">
         {% with messages = get_flashed_messages() %}
           {% for message in messages %}<div class="flash" role="status">{{ message }}</div>{% endfor %}

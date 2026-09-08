@@ -1,17 +1,55 @@
 {% extends "base.html" %}
-{% block title %}Calendar — Footy Career{% endblock %}
-{% block page_id %}calendar{% endblock %}
+{% block title %}Calendar — Footy Career</div>
+{% endblock %}
+{% block page_id %}calendar</div>
+{% endblock %}
 {% block content %}
+<div id="calendar-app" data-live-scope>
+<section class="career-command calendar-command" id="calendar-now">
+  <div class="career-command-main">
+    <p class="eyebrow">THIS WEEK IN CONTEXT</p>
+    <div class="command-status-row"><span class="command-phase">{{ career_shell.phase|replace('_',' ')|title }}</span><span>Week {{ career_shell.week }} of 52</span><span>{{ career.club_name }}</span></div>
+    <h1>{{ career_shell.primary.label }}</h1>
+    <p class="command-explainer">{{ career_shell.primary.detail }}</p>
+    <div class="command-actions">
+      {% if career_shell.primary.kind == 'resume_match' %}
+        <a class="button primary keyboard-continue" href="{{ url_for('main.match_centre', session_id=career_shell.primary.session_id) }}">Resume match</a>
+      {% elif career_shell.primary.kind == 'play_match' %}
+        <form method="post" action="{{ url_for('main.play') }}"><button class="button primary keyboard-continue">Play scheduled match</button></form>
+      {% elif career_shell.primary.kind == 'close_season' %}
+        <form data-live-form method="post" action="{{ url_for('main.end_season') }}"><input type="hidden" name="next" value="{{ url_for('main.calendar_view') }}"><button class="button primary keyboard-continue">Close competitive season</button></form>
+      {% elif career_shell.primary.kind == 'start_season' %}
+        <form data-live-form method="post" action="{{ url_for('main.season_start') }}"><input type="hidden" name="next" value="{{ url_for('main.calendar_view') }}"><button class="button primary keyboard-continue">Start next season</button></form>
+      {% else %}
+        <form data-live-form method="post" action="{{ url_for('main.calendar_advance') }}"><input type="hidden" name="next" value="{{ url_for('main.calendar_view') }}"><button class="button primary keyboard-continue">Advance one week</button></form>
+      {% endif %}
+    </div>
+    {% if career_shell.events %}<div class="week-event-summary">{% for event in career_shell.events %}<span>{{ event.title }}</span>{% endfor %}</div>{% endif %}
+  </div>
+  <aside class="week-state-card">
+    <span>WEEKLY STATE</span>
+    <div><small>Fitness</small><strong>{{ career_shell.fitness }}%</strong></div>
+    <div><small>Morale / stress</small><strong>{{ career_shell.morale }} / {{ career_shell.stress }}</strong></div>
+    <div><small>Programme</small><strong>{{ career_shell.selected_programme or 'Not selected' }}</strong></div>
+  </aside>
+</section>
 <section class="section-hero"><p class="eyebrow">{{ career.season_label }} · WEEK {{ career.calendar_week }} OF 52</p><h1>Football calendar</h1><p>League rounds, free weeks, international windows, transfer windows and the close season now share one timeline.</p></section>
 
 <div class="dashboard-grid top-grid">
   <section class="panel">
     <p class="eyebrow">CURRENT WEEK</p>
     {% if calendar.context.week %}<h2>{{ calendar.context.week.headline }}</h2><p>{{ calendar.context.week.start_date }} – {{ calendar.context.week.end_date }}</p><p class="muted">{{ calendar.context.week.phase|title }}</p>{% else %}<h2>Calendar complete</h2>{% endif %}
-    {% if calendar.context.can_play %}<form method="post" action="{{ url_for('main.play') }}"><button class="button primary keyboard-continue">Play scheduled match</button></form>
-    {% elif season_complete and career.season_phase != 'offseason' %}<form method="post" action="{{ url_for('main.end_season') }}"><button class="button primary keyboard-continue">Close competitive season</button></form>
-    {% elif calendar.context.calendar_complete %}<form method="post" action="{{ url_for('main.season_start') }}"><button class="button primary keyboard-continue">Start next season</button></form>
-    {% else %}<form method="post" action="{{ url_for('main.calendar_advance') }}"><input type="hidden" name="next" value="{{ url_for('main.calendar_view') }}"><button class="button primary keyboard-continue">Advance one week</button></form>{% endif %}
+    {% if calendar.context.can_play %}
+      {% set scheduled = calendar.context.fixtures_this_week[0] %}
+      <div class="fixture-line"><span>{{ scheduled.home_name }}</span><b>vs</b><span>{{ scheduled.away_name }}</span></div>
+      <p class="muted">Scheduled club match. It must be resolved before this week can advance.</p>
+    {% elif season_complete and career.season_phase != 'offseason' %}
+      <p class="muted">League programme complete. Season closure is waiting above.</p>
+    {% elif calendar.context.calendar_complete %}
+      <p class="muted">The complete 52-week cycle has been processed.</p>
+    {% else %}
+      <p class="muted">No club fixture blocks this week. International duty, finances and development resolve together when you advance.</p>
+    {% endif %}
   </section>
   <section class="panel">
     <p class="eyebrow">INTERNATIONAL CAREER</p>
@@ -24,7 +62,7 @@
 <section class="panel" id="offseason-programme"><div class="panel-heading"><div><p class="eyebrow">PLAYER PROGRAMME</p><h2>Choose how this free week is used</h2></div></div>
   <div class="programme-grid">
   {% for key, item in {'rest':('Full recovery','Medical work and rest'), 'holiday':('Private holiday','Morale boost with a cost'), 'personal_training':('Training camp','Development XP'), 'commercial':('Commercial work','Income and exposure'), 'charity':('Charity programme','Reputation and balance'), 'agent_meeting':('Agent meeting','Career strategy')}.items() %}
-    <form class="programme-card" method="post" action="{{ url_for('main.offseason_action') }}"><input type="hidden" name="action" value="{{ key }}"><input type="hidden" name="next" value="{{ url_for('main.calendar_view') }}"><h3>{{ item[0] }}</h3><p>{{ item[1] }}</p><button class="button secondary">Select</button></form>
+    <form class="programme-card" data-live-form method="post" action="{{ url_for('main.offseason_action') }}"><input type="hidden" name="action" value="{{ key }}"><input type="hidden" name="next" value="{{ url_for('main.calendar_view') }}"><h3>{{ item[0] }}</h3><p>{{ item[1] }}</p><button class="button secondary">Select</button></form>
   {% endfor %}
   </div>
 </section>
@@ -43,4 +81,5 @@
 </section>
 
 {% if international.recent %}<section class="panel"><p class="eyebrow">RECENT NATIONAL WINDOWS</p><div class="report-list">{% for callup in international.recent %}<article><strong>{{ callup.national_team_name }} · {{ callup.competition }}</strong><span>{{ callup.status|replace('_',' ')|title }} · {{ callup.appearances }} apps · {{ callup.goals }}G {{ callup.assists }}A</span></article>{% endfor %}</div></section>{% endif %}
+</div>
 {% endblock %}
