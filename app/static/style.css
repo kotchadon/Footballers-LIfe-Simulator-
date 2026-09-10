@@ -1047,3 +1047,23 @@ h1,h2,h3,h4,strong,b{color:var(--read-text-strong);font-family:-apple-system,Bli
 .attribute-card,.recovery-card{color:var(--read-text)!important;background:#132238!important;border-color:#293e5e!important;box-shadow:none!important}.attribute-card span,.attribute-card small,.recovery-card small{color:var(--read-muted)!important}.attribute-card.selected,.recovery-card.selected{color:#fff!important;background:#1c3150!important;border-color:#6f94ea!important}.attribute-card.selected span,.attribute-card.selected small,.recovery-card.selected small{color:#c9d7ef!important}.plan-console{color:var(--read-text)!important;background:#0b1728!important;border:1px solid var(--read-border-soft)!important;border-radius:12px!important}
 .btn,.button{border-radius:9px!important;font-weight:650!important;box-shadow:none!important}.btn-primary,.button.primary{color:#fff!important;background:#527bd3!important;border:1px solid #678ee2!important}.btn-ghost,.button.secondary,.btn-small,.button.mini{color:#dce6f5!important;background:#18283f!important;border:1px solid #2b4162!important}.btn:hover,.button:hover{transform:none!important;filter:brightness(1.08)}
 .career-command,.page-hero,.player-hero,.match-stage-v64{border-radius:18px!important}.career-command,.surface,.panel,.week-card,.metric-strip article,.metrics-ticket{box-shadow:none!important}.pill,.role-chip,.deduction-pills span,.offer-chips span,.status-chip,.live-pill,.location-pill,.command-status-row>span,.week-event-summary span{color:#dbe6f5!important;background:#1a2b44!important;border-color:#2c4161!important}.shortcut-dialog{color:var(--read-text)!important;background:#101c2e!important;border:1px solid var(--read-border)!important}
+
+/* Dashboard transfer preview — dark readability compatibility */
+.transfer-panel .offer-card {
+  color: var(--read-text) !important;
+  background: #132238 !important;
+  border-color: var(--read-border-soft) !important;
+  border-top-color: #527bd3 !important;
+}
+
+.transfer-panel .offer-money strong {
+  color: var(--read-text-strong) !important;
+}
+
+.transfer-panel .offer-money span {
+  color: var(--read-muted) !important;
+}
+
+.transfer-panel .text-link {
+  color: #aebdff !important;
+}
