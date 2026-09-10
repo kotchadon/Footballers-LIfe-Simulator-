@@ -7,3 +7,10 @@ instance/
 *.sqlite3
 .env
 .upgrade-backups/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+.repo-cleanup-backups/
+*.sqlite3-shm
+*.sqlite3-wal
