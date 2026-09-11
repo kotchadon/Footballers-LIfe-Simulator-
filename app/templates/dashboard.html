@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_player_visual.html" import player_visual as render_player_visual %}
 {% block title %}{{ career.player_name }} — Footy Career</div>
 {% endblock %}
 {% block page_id %}dashboard</div>
@@ -40,20 +41,38 @@
     {% endfor %}
   </aside>
 </section>
-<section class="player-hero calendar-hero">
-  <div class="player-identity">
-    <p class="eyebrow">{{ career.season_label }} · CALENDAR WEEK {{ career.calendar_week }} OF 52 · {{ career.season_phase|upper }}</p>
+<section class="career-hero-v5">
+  <div class="career-hero-v5__portrait">
+    {{ render_player_visual(player_visual_model, size='hero', show_status=False) }}
+  </div>
+
+  <div class="career-hero-v5__identity">
+    <p class="eyebrow">{{ career.season_label }} · WEEK {{ career.calendar_week }} OF 52 · {{ career.season_phase|upper }}</p>
     <h1>{{ career.player_name }}</h1>
-    <p class="hero-subtitle">{{ career.age }} · {{ career.nationality }} · {{ career.position }} · {{ career.club_name }} · {{ career.league_name }}</p>
-    <div class="status-pills">
-      {% if career.injured_weeks > 0 %}<span class="pill danger">Injured · {{ career.injured_weeks }} week(s)</span>{% endif %}
-      {% if career.suspended_matches > 0 %}<span class="pill warning">Suspended · {{ career.suspended_matches }} match(es)</span>{% endif %}
-      <span class="pill focus-pill" id="hero-training-pill">Plan · {{ training_plan.label }}</span>
-      <span class="pill">{{ career.squad_level|replace('_',' ')|title }} · Trust {{ career.manager_trust }}</span>
-      {% if international.team %}<span class="pill">{{ international.team.name }} · {{ career.national_team_status|replace('_',' ')|title }}</span>{% endif %}
+    <p class="career-hero-v5__meta">{{ career.age }} · {{ career.nationality }} · {{ career.position }} · {{ career.club_name }} · {{ career.league_name }}</p>
+
+    <div class="career-hero-v5__metrics" aria-label="Player condition">
+      <div class="career-hero-v5__metric"><span>FITNESS</span><strong>{{ career.fitness }}</strong></div>
+      <div class="career-hero-v5__metric"><span>MORALE</span><strong>{{ career.morale }}</strong></div>
+      <div class="career-hero-v5__metric"><span>STRESS</span><strong>{{ career.stress }}</strong></div>
+      <div class="career-hero-v5__metric"><span>TRUST</span><strong>{{ career.manager_trust }}</strong></div>
+    </div>
+
+    <div class="career-hero-v5__status">
+      <span>{{ training_plan.label }}</span>
+      <span>{{ career.squad_level|replace('_',' ')|title }}</span>
+      {% if career.injured_weeks > 0 %}<span>Injured · {{ career.injured_weeks }}w</span>{% endif %}
+      {% if career.suspended_matches > 0 %}<span>Suspended · {{ career.suspended_matches }}</span>{% endif %}
+      {% if international.team %}<span>{{ international.team.name }} · {{ career.national_team_status|replace('_',' ')|title }}</span>{% endif %}
     </div>
   </div>
-  <div class="player-card-mark"><span class="shirt-number">{{ career.overall }}</span><small>OVERALL</small><b>POT {{ career.potential }}</b></div>
+
+  <aside class="career-rating-v5" aria-label="Player rating">
+    <strong class="career-rating-v5__number">{{ career.overall }}</strong>
+    <span class="career-rating-v5__label">OVERALL</span>
+    <span class="career-rating-v5__potential">POT {{ career.potential }}</span>
+    <span class="career-rating-v5__role">{{ career.position }} · {{ career.squad_level|replace('_',' ')|title }}</span>
+  </aside>
 </section>
 
 <section class="metrics metrics-ticket">

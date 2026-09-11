@@ -48,6 +48,7 @@ from .services import (
     take_offseason_action,
     train_player,
 )
+from .player_visuals import build_player_visual
 
 bp = Blueprint("main", __name__)
 
@@ -102,6 +103,7 @@ def index():
     return render_template(
         "dashboard.html",
         career=career,
+        player_visual_model=build_player_visual(career, context="dashboard"),
         fixture=get_next_player_fixture(career),
         active_match=active_match,
         standings=get_standings(career["id"]),

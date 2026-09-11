@@ -1068,192 +1068,110 @@ h1,h2,h3,h4,strong,b{color:var(--read-text-strong);font-family:-apple-system,Bli
   color: #aebdff !important;
 }
 
-
-/* Player visual identity — isolated procedural SVG component */
+/* Player identity V5 — final-cut football portrait */
 .player-visual {
-  --pv-frame: #243b5a;
-  --pv-text: #eef5ff;
-  --pv-muted: #91a6c4;
+  --fp5-text: #eef5ff;
+  --fp5-muted: #8fa4c2;
   position: relative;
-  display: grid;
-  grid-template-rows: minmax(0, 1fr) auto;
-  width: min(100%, 420px);
   min-width: 0;
   margin: 0;
-  overflow: hidden;
-  color: var(--pv-text);
-  background:
-    radial-gradient(circle at 50% 18%, rgba(82,123,211,.18), transparent 37%),
-    linear-gradient(180deg, #101d30 0%, #091321 100%);
-  border: 1px solid rgba(126,157,204,.28);
-  border-radius: 22px;
-  box-shadow: 0 24px 55px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.04);
-  isolation: isolate;
+  color: var(--fp5-text);
+}
+
+.player-visual--hero {
+  width: min(100%, 310px);
 }
 
 .player-visual--compact {
-  width: min(100%, 270px);
+  width: min(100%, 230px);
+  padding: 10px;
+  background: rgba(8,16,28,.52);
+  border: 1px solid rgba(126,153,190,.18);
   border-radius: 18px;
 }
 
 .player-visual--inline {
-  width: min(100%, 220px);
-  border-radius: 16px;
+  width: min(100%, 180px);
 }
 
 .player-visual__svg {
   display: block;
   width: 100%;
   height: auto;
-  aspect-ratio: 6 / 7;
+  overflow: visible;
+  aspect-ratio: 1 / 1;
 }
 
-.player-visual__frame {
-  position: absolute;
-  inset: 0;
-  z-index: 3;
-  pointer-events: none;
-  border-radius: inherit;
-  box-shadow: inset 0 0 0 1px rgba(255,255,255,.025);
+.football-portrait-v5 .fp5-portrait {
+  transform-origin: 140px 232px;
+  transition: transform .22s ease, filter .22s ease, opacity .22s ease;
 }
 
-.player-visual__scanline {
-  position: absolute;
-  inset: 0;
-  opacity: .16;
-  background: repeating-linear-gradient(
-    180deg,
-    transparent 0,
-    transparent 3px,
-    rgba(255,255,255,.035) 4px
-  );
-}
-
-.player-visual__corner {
-  position: absolute;
-  width: 34px;
-  height: 34px;
-  border-color: rgba(132,166,219,.5);
-  border-style: solid;
-}
-
-.player-visual__corner--tl {
-  top: 12px;
-  left: 12px;
-  border-width: 2px 0 0 2px;
-}
-
-.player-visual__corner--br {
-  right: 12px;
-  bottom: 94px;
-  border-width: 0 2px 2px 0;
-}
-
-.pv-posture {
-  transform-origin: 180px 400px;
-}
-
-.pv-posture--upright {
-  transform: translateY(0) rotate(0);
-}
-
-.pv-posture--balanced {
+.football-portrait-v5[data-energy="tired"] .fp5-portrait {
   transform: translateY(2px);
 }
 
-.pv-posture--lowered {
-  transform: translateY(8px) rotate(.4deg);
+.football-portrait-v5[data-energy="exhausted"] .fp5-portrait {
+  transform: translateY(4px);
+  filter: saturate(.92) brightness(.97);
 }
 
-.pv-posture--slumped {
-  transform: translateY(15px) rotate(1deg);
+.football-portrait-v5[data-mood="subdued"] .fp5-portrait {
+  filter: saturate(.90) brightness(.98);
 }
 
-.pv-posture--guarded {
-  transform: translateY(9px) rotate(-.8deg);
+.football-portrait-v5[data-injury="injured"] .fp5-portrait {
+  transform: translateY(3px) rotate(-.16deg);
 }
 
-.pv-idle {
-  transform-origin: 180px 400px;
-  animation: pv-breathe 4.8s ease-in-out infinite;
+.football-portrait-v5[data-selection="not_selected"] {
+  opacity: .88;
 }
 
-.pv-eyes circle {
-  transform-box: fill-box;
-  transform-origin: center;
-}
-
-.pv-expression--exhausted .pv-eyes,
-.pv-expression--strained .pv-eyes {
-  opacity: .84;
-}
-
-.pv-sweat {
-  animation: pv-sweat 2.7s ease-in-out infinite;
-}
-
-.pv-treatment {
-  filter: drop-shadow(0 2px 2px rgba(0,0,0,.28));
-}
-
-.player-visual[data-selection="not_selected"] .player-visual__svg {
-  filter: saturate(.72) brightness(.9);
-}
-
-.player-visual[data-injury="injured"] {
-  border-color: rgba(230,156,83,.42);
-}
-
-.player-visual[data-energy="exhausted"] {
-  box-shadow: 0 24px 55px rgba(0,0,0,.32), inset 0 0 44px rgba(166,75,75,.08);
+.fp5-treatment {
+  filter: drop-shadow(0 1px 1px rgba(0,0,0,.18));
 }
 
 .player-visual__caption {
-  position: relative;
-  z-index: 4;
   display: grid;
   grid-template-columns: 1fr auto;
-  gap: 10px 14px;
+  gap: 9px 12px;
   align-items: center;
-  padding: 14px 16px 16px;
-  background: linear-gradient(180deg, rgba(8,17,30,.86), rgba(6,13,23,.98));
-  border-top: 1px solid rgba(126,157,204,.2);
+  padding: 11px 12px 12px;
+  margin-top: 4px;
+  border-top: 1px solid rgba(128,153,188,.16);
 }
 
 .player-visual__caption-main {
   min-width: 0;
   display: grid;
   grid-template-columns: auto 1fr;
+  gap: 2px 8px;
   align-items: baseline;
-  gap: 3px 9px;
 }
 
-.player-visual__caption-main strong {
+.player-visual__caption-main strong,
+.player-visual__caption-main small {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 1.02rem;
-  letter-spacing: .025em;
 }
 
 .player-visual__caption-main small {
   grid-column: 2;
-  color: var(--pv-muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  color: var(--fp5-muted);
 }
 
 .player-visual__position {
   grid-row: 1 / span 2;
   align-self: center;
-  padding: 5px 7px;
-  border: 1px solid rgba(126,157,204,.34);
-  border-radius: 7px;
-  color: #dbe8fb;
-  background: #13233a;
+  padding: 4px 6px;
+  border: 1px solid rgba(128,153,188,.24);
+  border-radius: 6px;
+  color: #dce8fa;
+  background: rgba(20,35,56,.82);
+  font-size: .68rem;
   font-weight: 900;
-  font-size: .72rem;
   letter-spacing: .08em;
 }
 
@@ -1262,68 +1180,278 @@ h1,h2,h3,h4,strong,b{color:var(--read-text-strong);font-family:-apple-system,Bli
   grid-row: 1 / span 2;
   display: grid;
   justify-items: center;
-  min-width: 54px;
-  padding: 7px 9px;
-  border-left: 1px solid rgba(126,157,204,.22);
+  min-width: 48px;
 }
 
 .player-visual__overall b {
-  font-size: 1.6rem;
+  font-size: 1.35rem;
   line-height: 1;
 }
 
 .player-visual__overall span {
-  margin-top: 3px;
-  color: var(--pv-muted);
-  font-size: .62rem;
+  color: var(--fp5-muted);
+  font-size: .58rem;
   font-weight: 900;
-  letter-spacing: .14em;
+  letter-spacing: .12em;
 }
 
 .player-visual__state {
   grid-column: 1 / -1;
   display: flex;
-  gap: 6px;
   flex-wrap: wrap;
+  gap: 5px;
 }
 
 .player-visual__state span {
-  padding: 4px 7px;
-  border: 1px solid rgba(126,157,204,.22);
-  border-radius: 999px;
-  color: #b9c9de;
-  background: rgba(24,40,63,.72);
-  font-size: .64rem;
+  color: #b6c7dd;
+  font-size: .62rem;
   font-weight: 800;
-  letter-spacing: .04em;
 }
 
-.player-visual[data-injury="injured"] .player-visual__state span:last-child {
-  color: #ffd8aa;
-  border-color: rgba(230,156,83,.34);
-  background: rgba(116,68,27,.25);
+/* Player identity V5 — final-cut career hero */
+.career-hero-v5 {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(210px, 27%) minmax(0, 1fr) minmax(112px, 150px);
+  gap: clamp(22px, 3vw, 44px);
+  align-items: center;
+  min-height: 330px;
+  padding: clamp(22px, 3vw, 38px);
+  margin-bottom: 18px;
+  overflow: hidden;
+  color: var(--read-text);
+  background:
+    radial-gradient(circle at 16% 22%, rgba(82,123,211,.14), transparent 30%),
+    radial-gradient(circle at 86% 16%, rgba(124,148,190,.11), transparent 28%),
+    linear-gradient(118deg, #0d1828 0%, #132642 58%, #0d1725 100%);
+  border: 1px solid rgba(128,153,188,.20);
+  border-radius: 22px;
+  box-shadow: 0 24px 60px rgba(0,0,0,.24);
 }
 
-@keyframes pv-breathe {
-  0%, 100% { transform: translateY(0) scale(1); }
-  50% { transform: translateY(-1.5px) scale(1.003); }
+.career-hero-v5::before {
+  content: "";
+  position: absolute;
+  width: 440px;
+  height: 440px;
+  right: -170px;
+  top: -258px;
+  border: 1px solid rgba(102,148,199,.18);
+  border-radius: 50%;
+  box-shadow:
+    0 0 0 44px rgba(102,148,199,.032),
+    0 0 0 88px rgba(102,148,199,.022);
+  pointer-events: none;
 }
 
-@keyframes pv-sweat {
-  0%, 100% { opacity: .68; }
-  50% { opacity: 1; transform: translateY(2px); }
+.career-hero-v5__portrait,
+.career-hero-v5__identity,
+.career-rating-v5 {
+  position: relative;
+  z-index: 1;
 }
 
-@media (max-width: 720px) {
-  .player-visual {
-    width: min(100%, 360px);
-    margin-inline: auto;
+.career-hero-v5__portrait {
+  align-self: end;
+  min-width: 0;
+}
+
+.career-hero-v5__portrait::after {
+  content: "";
+  position: absolute;
+  right: -12px;
+  top: 14%;
+  bottom: 12%;
+  width: 1px;
+  background: linear-gradient(180deg, transparent, rgba(135,163,202,.20), transparent);
+}
+
+.career-hero-v5__portrait .player-visual {
+  margin-inline: auto;
+}
+
+.career-hero-v5__identity {
+  min-width: 0;
+}
+
+.career-hero-v5__identity .eyebrow {
+  margin: 0 0 8px;
+  color: #8ca7d0;
+  font-size: .72rem;
+  font-weight: 900;
+  letter-spacing: .15em;
+  text-transform: uppercase;
+}
+
+.career-hero-v5__identity h1 {
+  margin: 0;
+  max-width: 13ch;
+  color: #f5f8fd;
+  font-size: clamp(2.45rem, 4.8vw, 4.45rem);
+  line-height: .96;
+  letter-spacing: -.045em;
+}
+
+.career-hero-v5__meta {
+  margin: 14px 0 0;
+  color: #bdcce0;
+  font-size: clamp(.96rem, 1.45vw, 1.15rem);
+}
+
+.career-hero-v5__metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(72px, 1fr));
+  gap: 8px;
+  max-width: 570px;
+  margin-top: 24px;
+}
+
+.career-hero-v5__metric {
+  min-width: 0;
+  padding: 10px 12px;
+  background: rgba(7,16,28,.34);
+  border: 1px solid rgba(128,153,188,.15);
+  border-radius: 9px;
+}
+
+.career-hero-v5__metric span {
+  display: block;
+  color: #7f96b7;
+  font-size: .60rem;
+  font-weight: 900;
+  letter-spacing: .12em;
+}
+
+.career-hero-v5__metric strong {
+  display: block;
+  margin-top: 2px;
+  color: #eef4fc;
+  font-size: 1.15rem;
+}
+
+.career-hero-v5__status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px 14px;
+  margin-top: 15px;
+  color: #98abc5;
+  font-size: .76rem;
+  font-weight: 750;
+}
+
+.career-hero-v5__status span + span::before {
+  content: "•";
+  margin-right: 14px;
+  color: #5e7da7;
+}
+
+.career-rating-v5 {
+  align-self: stretch;
+  display: grid;
+  align-content: center;
+  justify-items: start;
+  padding-left: clamp(14px, 2vw, 26px);
+  border-left: 1px solid rgba(139,164,199,.18);
+}
+
+.career-rating-v5__number {
+  color: #f6f8fc;
+  font-size: clamp(3.3rem, 5.8vw, 5.25rem);
+  font-weight: 950;
+  line-height: .88;
+  letter-spacing: -.06em;
+}
+
+.career-rating-v5__label {
+  margin-top: 9px;
+  color: #8ca7d0;
+  font-size: .68rem;
+  font-weight: 950;
+  letter-spacing: .18em;
+}
+
+.career-rating-v5__potential {
+  margin-top: 18px;
+  padding-top: 12px;
+  width: 100%;
+  color: #c3d0e2;
+  border-top: 2px solid #527bd3;
+  font-size: .84rem;
+  font-weight: 850;
+}
+
+.career-rating-v5__role {
+  margin-top: 5px;
+  color: #8197b4;
+  font-size: .68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+@media (max-width: 980px) {
+  .career-hero-v5 {
+    grid-template-columns: minmax(190px, 31%) minmax(0, 1fr);
+  }
+
+  .career-rating-v5 {
+    grid-column: 2;
+    grid-row: 2;
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    align-self: auto;
+    padding: 12px 0 0;
+    border-left: 0;
+    border-top: 1px solid rgba(139,164,199,.18);
+  }
+
+  .career-rating-v5__number {
+    font-size: 2.5rem;
+  }
+
+  .career-rating-v5__label,
+  .career-rating-v5__potential,
+  .career-rating-v5__role {
+    margin: 0;
+    padding: 0;
+    width: auto;
+    border: 0;
+  }
+}
+
+@media (max-width: 680px) {
+  .career-hero-v5 {
+    grid-template-columns: 1fr;
+    gap: 10px;
+    padding: 18px;
+  }
+
+  .career-hero-v5__portrait {
+    width: min(70vw, 285px);
+    justify-self: center;
+  }
+
+  .career-hero-v5__portrait::after {
+    display: none;
+  }
+
+  .career-hero-v5__identity h1 {
+    max-width: none;
+    font-size: clamp(2.25rem, 11vw, 3.4rem);
+  }
+
+  .career-hero-v5__metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .career-rating-v5 {
+    grid-column: 1;
+    grid-row: auto;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .pv-idle,
-  .pv-sweat {
-    animation: none !important;
+  .football-portrait-v5 .fp5-portrait {
+    transition: none !important;
   }
 }

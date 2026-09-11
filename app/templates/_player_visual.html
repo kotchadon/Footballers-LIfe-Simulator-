@@ -1,212 +1,71 @@
+{% from "player_portrait_v5/_parts.html" import kit, neck, head, brows, eyes, nose, mouth, facial_hair, hair %}
+
 {% macro player_visual(visual, size='hero', show_status=True) -%}
 <figure
-  class="player-visual player-visual--{{ size }} pv-build--{{ visual.appearance.build }} pv-posture--{{ visual.presentation.posture }} pv-expression--{{ visual.presentation.expression }}"
+  class="player-visual player-visual--{{ size }} football-portrait-v5"
   data-player-identity="{{ visual.identity_key }}"
   data-energy="{{ visual.state.energy }}"
   data-mood="{{ visual.state.mood }}"
   data-selection="{{ visual.state.selection }}"
   data-injury="{{ visual.state.injury }}"
+  data-expression="{{ visual.presentation.expression }}"
 >
-  <div class="player-visual__frame" aria-hidden="true">
-    <span class="player-visual__scanline"></span>
-    <span class="player-visual__corner player-visual__corner--tl"></span>
-    <span class="player-visual__corner player-visual__corner--br"></span>
-  </div>
-
   <svg
-    class="player-visual__svg"
-    viewBox="0 0 360 420"
+    class="player-visual__svg football-portrait-v5__svg"
+    viewBox="0 0 280 280"
     role="img"
     aria-label="{{ visual.a11y_label }}"
     preserveAspectRatio="xMidYMid meet"
   >
-    <g class="pv-backdrop" aria-hidden="true">
-      <ellipse cx="180" cy="380" rx="142" ry="25" fill="#07111f" opacity=".75"/>
-      <circle cx="180" cy="168" r="132" fill="#14243a" opacity=".72"/>
-      <circle cx="180" cy="168" r="102" fill="#1b3150" opacity=".42"/>
-      <path d="M38 318 L322 318" stroke="#5f7da8" stroke-width="1" opacity=".2"/>
-      <path d="M58 334 L302 334" stroke="#5f7da8" stroke-width="1" opacity=".12"/>
+    <defs>
+      <linearGradient id="fp5-skin-{{ visual.identity_key }}" x1=".12" y1=".06" x2=".86" y2=".94">
+        <stop offset="0" stop-color="{{ visual.appearance.skin }}"/>
+        <stop offset=".72" stop-color="{{ visual.appearance.skin }}"/>
+        <stop offset="1" stop-color="{{ visual.appearance.skin_shadow }}"/>
+      </linearGradient>
+      <linearGradient id="fp5-kit-{{ visual.identity_key }}" x1=".08" y1=".04" x2=".92" y2=".96">
+        <stop offset="0" stop-color="{{ visual.kit.primary }}"/>
+        <stop offset=".70" stop-color="{{ visual.kit.primary }}"/>
+        <stop offset="1" stop-color="{{ visual.kit.accent }}"/>
+      </linearGradient>
+      <radialGradient id="fp5-halo-{{ visual.identity_key }}" cx=".50" cy=".42" r=".60">
+        <stop offset="0" stop-color="{{ visual.kit.secondary }}" stop-opacity=".13"/>
+        <stop offset=".70" stop-color="{{ visual.kit.primary }}" stop-opacity=".05"/>
+        <stop offset="1" stop-color="{{ visual.kit.primary }}" stop-opacity="0"/>
+      </radialGradient>
+    </defs>
+
+    <g class="fp5-backdrop" aria-hidden="true">
+      <ellipse cx="140" cy="145" rx="112" ry="119" fill="url(#fp5-halo-{{ visual.identity_key }})"/>
+      <path d="M42 252 H238" stroke="#7e94b0" stroke-width="1" opacity=".08"/>
     </g>
 
-    <g class="pv-posture pv-posture--{{ visual.presentation.posture }}" data-layer="posture">
-      <g class="pv-idle" data-layer="idle">
-        <g class="pv-character" data-layer="character">
-      <g class="pv-body pv-body--{{ visual.appearance.build }}" data-layer="torso">
-        {% if visual.appearance.build == 'lean' %}
-          <path d="M92 414 C96 345 119 314 151 299 L209 299 C241 314 264 345 268 414 Z" fill="{{ visual.kit.primary }}"/>
-        {% elif visual.appearance.build == 'powerful' %}
-          <path d="M58 414 C64 338 105 309 148 296 L212 296 C255 309 296 338 302 414 Z" fill="{{ visual.kit.primary }}"/>
-        {% elif visual.appearance.build == 'athletic' %}
-          <path d="M72 414 C78 340 111 312 149 298 L211 298 C249 312 282 340 288 414 Z" fill="{{ visual.kit.primary }}"/>
-        {% else %}
-          <path d="M80 414 C85 342 114 313 150 298 L210 298 C246 313 275 342 280 414 Z" fill="{{ visual.kit.primary }}"/>
-        {% endif %}
-
-        <path d="M146 300 C154 320 206 320 214 300 L214 326 C204 339 156 339 146 326 Z" fill="{{ visual.kit.secondary }}" opacity=".92"/>
-
-        {% if visual.kit.pattern == 'centre_panel' %}
-          <path d="M163 322 L197 322 L205 414 L155 414 Z" fill="{{ visual.kit.secondary }}" opacity=".72"/>
-        {% elif visual.kit.pattern == 'vertical' %}
-          <path d="M133 316 L153 309 L160 414 L133 414 Z M207 309 L227 316 L227 414 L200 414 Z" fill="{{ visual.kit.secondary }}" opacity=".62"/>
-        {% elif visual.kit.pattern == 'shoulder' %}
-          <path d="M83 353 C104 326 128 312 151 303 L158 325 C131 334 108 348 92 371 Z M277 353 C256 326 232 312 209 303 L202 325 C229 334 252 348 268 371 Z" fill="{{ visual.kit.secondary }}" opacity=".8"/>
-        {% elif visual.kit.pattern == 'diagonal' %}
-          <path d="M105 328 L136 309 L248 397 L229 414 L200 414 Z" fill="{{ visual.kit.secondary }}" opacity=".64"/>
-        {% endif %}
-
-        <path d="M77 404 C112 389 248 389 283 404" fill="none" stroke="{{ visual.kit.accent }}" stroke-width="5" opacity=".8"/>
-        <path d="M100 346 C121 326 139 317 151 313" fill="none" stroke="{{ visual.kit.accent }}" stroke-width="3" opacity=".65"/>
-        <path d="M260 346 C239 326 221 317 209 313" fill="none" stroke="{{ visual.kit.accent }}" stroke-width="3" opacity=".65"/>
-      </g>
-
-      <g class="pv-neck" data-layer="neck">
-        <path d="M151 253 C153 274 154 290 145 306 C157 318 203 318 215 306 C206 290 207 274 209 253 Z" fill="{{ visual.appearance.skin }}"/>
-        <path d="M153 266 C163 276 198 276 207 266 C207 279 209 290 215 306 C196 318 164 318 145 306 C151 291 153 279 153 266 Z" fill="{{ visual.appearance.skin_shadow }}" opacity=".28"/>
-      </g>
-
-      <g class="pv-head pv-face--{{ visual.appearance.face_shape }}" data-layer="face">
-        <ellipse cx="119" cy="191" rx="15" ry="24" fill="{{ visual.appearance.skin }}"/>
-        <ellipse cx="241" cy="191" rx="15" ry="24" fill="{{ visual.appearance.skin }}"/>
-
-        {% if visual.appearance.face_shape == 'angular' %}
-          <path d="M125 122 C139 91 221 91 235 122 L242 184 C239 228 218 268 180 281 C142 268 121 228 118 184 Z" fill="{{ visual.appearance.skin }}"/>
-          <path d="M126 205 C134 241 154 267 180 278 C206 267 226 241 234 205 C221 220 209 228 180 233 C151 228 139 220 126 205 Z" fill="{{ visual.appearance.skin_shadow }}" opacity=".12"/>
-        {% elif visual.appearance.face_shape == 'square' %}
-          <path d="M122 124 C138 94 222 94 238 124 L240 210 C233 253 211 279 180 284 C149 279 127 253 120 210 Z" fill="{{ visual.appearance.skin }}"/>
-          <path d="M122 214 C135 254 154 276 180 281 C206 276 225 254 238 214 L229 258 C212 281 148 281 131 258 Z" fill="{{ visual.appearance.skin_shadow }}" opacity=".13"/>
-        {% elif visual.appearance.face_shape == 'long' %}
-          <path d="M127 116 C143 91 217 91 233 116 L239 184 C235 239 214 282 180 292 C146 282 125 239 121 184 Z" fill="{{ visual.appearance.skin }}"/>
-          <path d="M128 225 C143 263 158 283 180 290 C202 283 217 263 232 225 C220 248 204 259 180 262 C156 259 140 248 128 225 Z" fill="{{ visual.appearance.skin_shadow }}" opacity=".11"/>
-        {% elif visual.appearance.face_shape == 'round' %}
-          <path d="M119 135 C127 98 233 98 241 135 L243 194 C238 245 214 274 180 279 C146 274 122 245 117 194 Z" fill="{{ visual.appearance.skin }}"/>
-          <ellipse cx="180" cy="232" rx="52" ry="36" fill="{{ visual.appearance.skin_shadow }}" opacity=".08"/>
-        {% else %}
-          <path d="M123 124 C137 94 223 94 237 124 L241 188 C237 236 214 273 180 283 C146 273 123 236 119 188 Z" fill="{{ visual.appearance.skin }}"/>
-          <path d="M126 218 C139 251 157 274 180 281 C203 274 221 251 234 218 C222 240 204 249 180 252 C156 249 138 240 126 218 Z" fill="{{ visual.appearance.skin_shadow }}" opacity=".1"/>
-        {% endif %}
-
-        <path d="M123 182 C139 172 150 169 163 173" fill="none" stroke="{{ visual.appearance.skin_shadow }}" stroke-width="2" opacity=".22"/>
-        <path d="M237 182 C221 172 210 169 197 173" fill="none" stroke="{{ visual.appearance.skin_shadow }}" stroke-width="2" opacity=".22"/>
-      </g>
-
-      <g class="pv-brows pv-brows--{{ visual.appearance.brow_style }}" data-layer="brows" fill="none" stroke="{{ visual.appearance.hair }}" stroke-linecap="round">
-        {% if visual.appearance.brow_style == 'arched' %}
-          <path d="M137 163 Q149 154 163 160" stroke-width="6"/>
-          <path d="M197 160 Q211 154 223 163" stroke-width="6"/>
-        {% elif visual.appearance.brow_style == 'strong' %}
-          <path d="M136 164 L163 158" stroke-width="8"/>
-          <path d="M197 158 L224 164" stroke-width="8"/>
-        {% elif visual.appearance.brow_style == 'soft' %}
-          <path d="M137 162 Q150 159 162 161" stroke-width="4"/>
-          <path d="M198 161 Q210 159 223 162" stroke-width="4"/>
-        {% else %}
-          <path d="M137 162 L162 160" stroke-width="6"/>
-          <path d="M198 160 L223 162" stroke-width="6"/>
-        {% endif %}
-      </g>
-
-      <g class="pv-eyes pv-eyes--{{ visual.appearance.eye_style }}" data-layer="eyes">
-        {% if visual.appearance.eye_style == 'narrow' %}
-          <path d="M137 181 Q150 176 163 181 Q150 185 137 181 Z" fill="#f2eee8"/>
-          <path d="M197 181 Q210 176 223 181 Q210 185 197 181 Z" fill="#f2eee8"/>
-        {% elif visual.appearance.eye_style == 'wide' %}
-          <ellipse cx="150" cy="181" rx="13" ry="8" fill="#f2eee8"/>
-          <ellipse cx="210" cy="181" rx="13" ry="8" fill="#f2eee8"/>
-        {% else %}
-          <ellipse cx="150" cy="181" rx="12" ry="6.5" fill="#f2eee8"/>
-          <ellipse cx="210" cy="181" rx="12" ry="6.5" fill="#f2eee8"/>
-        {% endif %}
-        <circle cx="150" cy="181" r="4.6" fill="#26384d"/>
-        <circle cx="210" cy="181" r="4.6" fill="#26384d"/>
-        <circle cx="151.5" cy="179.5" r="1.2" fill="#ffffff"/>
-        <circle cx="211.5" cy="179.5" r="1.2" fill="#ffffff"/>
-      </g>
-
-      <g class="pv-nose pv-nose--{{ visual.appearance.nose_style }}" data-layer="nose" fill="none" stroke="{{ visual.appearance.skin_shadow }}" stroke-linecap="round">
-        {% if visual.appearance.nose_style == 'broad' %}
-          <path d="M180 183 C176 199 173 211 169 220 Q180 227 191 220" stroke-width="4"/>
-        {% elif visual.appearance.nose_style == 'narrow' %}
-          <path d="M181 184 C179 199 177 211 176 220 Q181 224 187 220" stroke-width="3"/>
-        {% elif visual.appearance.nose_style == 'compact' %}
-          <path d="M180 188 C178 202 176 212 174 218 Q180 222 186 218" stroke-width="3.5"/>
-        {% else %}
-          <path d="M180 184 C178 200 176 213 173 220 Q180 225 188 220" stroke-width="3.5"/>
-        {% endif %}
-      </g>
-
-      <g class="pv-mouth pv-mouth--{{ visual.presentation.expression }}" data-layer="expression" fill="none" stroke="#5b2f31" stroke-linecap="round">
-        {% if visual.presentation.expression == 'confident' %}
-          <path d="M156 243 Q180 256 204 241" stroke-width="4"/>
-        {% elif visual.presentation.expression == 'subdued' %}
-          <path d="M158 248 Q180 238 202 249" stroke-width="4"/>
-        {% elif visual.presentation.expression == 'tense' %}
-          <path d="M157 245 Q180 242 203 245" stroke-width="5"/>
-        {% elif visual.presentation.expression == 'exhausted' %}
-          <path d="M158 246 Q180 252 202 246" stroke-width="4"/>
-          <path d="M170 254 Q180 258 190 254" stroke-width="2" opacity=".6"/>
-        {% elif visual.presentation.expression == 'strained' %}
-          <path d="M158 248 Q181 241 202 247" stroke-width="4.5"/>
-        {% else %}
-          <path d="M158 245 Q180 248 202 245" stroke-width="4"/>
-        {% endif %}
-      </g>
-
-      {% if visual.appearance.facial_hair != 'clean' %}
-      <g class="pv-facial-hair pv-facial-hair--{{ visual.appearance.facial_hair }}" data-layer="facial-hair" fill="{{ visual.appearance.hair }}" opacity=".72">
-        {% if visual.appearance.facial_hair == 'stubble' %}
-          <path d="M136 228 C142 267 160 278 180 283 C200 278 218 267 224 228 C215 249 202 261 180 266 C158 261 145 249 136 228 Z" opacity=".18"/>
-        {% elif visual.appearance.facial_hair == 'goatee' %}
-          <path d="M166 250 Q180 258 194 250 L189 277 Q180 285 171 277 Z"/>
-        {% else %}
-          <path d="M137 229 C143 263 158 278 180 283 C202 278 217 263 223 229 C211 249 198 259 180 264 C162 259 149 249 137 229 Z" opacity=".5"/>
-        {% endif %}
-      </g>
-      {% endif %}
-
-      <g class="pv-hair pv-hair--{{ visual.appearance.hair_style }}" data-layer="hair" fill="{{ visual.appearance.hair }}">
-        {% if visual.appearance.hair_style == 'textured_crop' %}
-          <path d="M122 145 C119 111 135 87 160 82 C178 70 214 77 229 94 C243 105 245 127 237 148 C223 132 207 127 190 129 C173 117 145 125 122 145 Z"/>
-          <path d="M133 115 L145 91 L151 118 L164 86 L170 117 L185 80 L190 117 L205 85 L207 120 L223 96 L221 126 Z" fill="{{ visual.appearance.hair_highlight }}" opacity=".38"/>
-        {% elif visual.appearance.hair_style == 'fade' %}
-          <path d="M124 150 C119 116 134 91 158 84 C181 73 216 80 232 103 C238 115 240 131 236 148 C213 125 149 123 124 150 Z"/>
-          <path d="M120 145 C122 169 123 176 125 184 L132 157 C144 139 212 138 229 157 L236 184 C239 167 240 153 236 142 C207 117 149 119 120 145 Z" opacity=".62"/>
-        {% elif visual.appearance.hair_style == 'short_waves' %}
-          <path d="M121 147 C120 111 137 88 162 82 C184 73 216 80 232 102 C241 114 242 132 237 149 C223 133 208 129 194 131 C178 120 156 126 142 134 C133 136 127 141 121 147 Z"/>
-          <path d="M132 112 Q144 96 156 111 Q168 91 181 108 Q196 91 207 110 Q219 101 229 118" fill="none" stroke="{{ visual.appearance.hair_highlight }}" stroke-width="7" opacity=".55"/>
-        {% elif visual.appearance.hair_style == 'side_sweep' %}
-          <path d="M121 150 C118 115 135 90 161 82 C188 73 220 83 235 108 C240 120 241 135 236 150 C218 130 201 124 179 126 C162 128 141 134 121 150 Z"/>
-          <path d="M137 123 C160 89 199 87 226 112 C203 101 173 105 144 132 Z" fill="{{ visual.appearance.hair_highlight }}" opacity=".38"/>
-        {% elif visual.appearance.hair_style == 'close_cut' %}
-          <path d="M123 148 C120 114 138 92 160 86 C184 78 215 84 232 106 C239 119 240 134 236 149 C211 129 147 129 123 148 Z" opacity=".88"/>
-        {% else %}
-          <path d="M121 149 C119 112 136 88 161 81 C186 72 218 82 234 106 C241 119 241 135 236 151 C218 130 205 126 188 128 C169 119 142 129 121 149 Z"/>
-        {% endif %}
-      </g>
+    <g class="fp5-portrait" data-layer="portrait">
+      {{ kit(visual) }}
+      {{ neck(visual) }}
+      {{ head(visual) }}
+      {{ brows(visual) }}
+      {{ eyes(visual) }}
+      {{ nose(visual) }}
+      {{ mouth(visual) }}
+      {{ facial_hair(visual) }}
+      {{ hair(visual) }}
 
       {% if visual.presentation.sweat_level > 0 %}
-      <g class="pv-sweat pv-sweat--{{ visual.presentation.sweat_level }}" data-layer="fatigue" fill="#9ed9ff">
-        <path d="M232 181 C238 190 238 195 232 199 C226 195 226 190 232 181 Z" opacity=".8"/>
+      <g class="fp5-fatigue" data-layer="fatigue" fill="#a5d9ef">
+        <path d="M187 130 C190 136 190 140 187 142 C184 140 184 136 187 130 Z" opacity=".42"/>
         {% if visual.presentation.sweat_level > 1 %}
-          <path d="M127 204 C132 212 132 217 127 220 C122 217 122 212 127 204 Z" opacity=".66"/>
+        <path d="M101 148 C104 154 104 158 101 160 C98 158 98 154 101 148 Z" opacity=".30"/>
         {% endif %}
       </g>
       {% endif %}
 
       {% if visual.presentation.treatment %}
-      <g class="pv-treatment" data-layer="treatment">
-        <path d="M212 338 L260 361" stroke="#eee8d8" stroke-width="14" stroke-linecap="round" opacity=".94"/>
-        <path d="M217 333 L265 356" stroke="#b9af99" stroke-width="2" stroke-dasharray="5 5" opacity=".7"/>
+      <g class="fp5-treatment" data-layer="treatment">
+        <rect x="174" y="147" width="19" height="5.5" rx="2.75" transform="rotate(-11 174 147)" fill="#d8d0c1" opacity=".78"/>
+        <path d="M178 150 L190 147" stroke="#a79d8e" stroke-width="1" opacity=".48"/>
       </g>
       {% endif %}
-        </g>
-      </g>
-    </g>
-
-    <g class="pv-hud" aria-hidden="true">
-      <path d="M28 34 H112" stroke="{{ visual.kit.accent }}" stroke-width="4"/>
-      <path d="M248 34 H332" stroke="{{ visual.kit.accent }}" stroke-width="4"/>
-      <text x="28" y="58" fill="#8fa8ca" font-size="11" font-family="system-ui, sans-serif" font-weight="800">PLAYER ID</text>
-      <text x="332" y="58" text-anchor="end" fill="#8fa8ca" font-size="11" font-family="system-ui, sans-serif" font-weight="800">{{ visual.identity_key }}</text>
     </g>
   </svg>
 
@@ -225,13 +84,12 @@
       <span>{{ visual.state.energy|replace('_', ' ')|title }}</span>
       <span>{{ visual.state.mood|replace('_', ' ')|title }}</span>
       {% if visual.state.injury == 'injured' %}
-        <span>Injured {{ visual.state.injured_weeks }}w</span>
+      <span>Injured {{ visual.state.injured_weeks }}w</span>
       {% elif visual.state.selection != 'unspecified' %}
-        <span>{{ visual.state.selection|replace('_', ' ')|title }}</span>
+      <span>{{ visual.state.selection|replace('_', ' ')|title }}</span>
       {% endif %}
     </div>
   </figcaption>
   {% endif %}
 </figure>
 {%- endmacro %}
-
