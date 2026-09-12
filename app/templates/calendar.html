@@ -33,7 +33,7 @@
     <div><small>Programme</small><strong>{{ career_shell.selected_programme or 'Not selected' }}</strong></div>
   </aside>
 </section>
-<section class="section-hero"><p class="eyebrow">{{ career.season_label }} · WEEK {{ career.calendar_week }} OF 52</p><h1>Football calendar</h1><p>League rounds, free weeks, international windows, transfer windows and the close season now share one timeline.</p></section>
+<section class="section-hero"><p class="eyebrow">{{ career.season_label }} · {% if career.calendar_week > 52 %}SEASON TRANSITION{% else %}WEEK {{ career.calendar_week }} OF 52{% endif %}</p><h1>Football calendar</h1><p>League rounds, free weeks, international windows, transfer windows and the close season now share one timeline.</p></section>
 
 <div class="dashboard-grid top-grid">
   <section class="panel">
@@ -58,7 +58,8 @@
   </section>
 </div>
 
-{% if career.season_phase in ['offseason','preseason'] %}
+{% set player_programme_events = calendar.context.events | selectattr('event_type', 'equalto', 'offseason') | list %}
+{% if player_programme_events and not calendar.context.calendar_complete %}
 <section class="panel" id="offseason-programme"><div class="panel-heading"><div><p class="eyebrow">PLAYER PROGRAMME</p><h2>Choose how this free week is used</h2></div></div>
   <div class="programme-grid">
   {% for key, item in {'rest':('Full recovery','Medical work and rest'), 'holiday':('Private holiday','Morale boost with a cost'), 'personal_training':('Training camp','Development XP'), 'commercial':('Commercial work','Income and exposure'), 'charity':('Charity programme','Reputation and balance'), 'agent_meeting':('Agent meeting','Career strategy')}.items() %}

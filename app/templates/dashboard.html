@@ -11,7 +11,7 @@
     <p class="eyebrow">CAREER COMMAND CENTRE</p>
     <div class="command-status-row">
       <span class="command-phase">{{ career_shell.phase|replace('_',' ')|title }}</span>
-      <span>Week {{ career_shell.week }} of 52</span>
+      <span>{% if career_shell.week > 52 %}Season transition{% else %}Week {{ career_shell.week }} of 52{% endif %}</span>
       <span>{{ career.club_name }}</span>
       <span>{{ career.league_name }}</span>
     </div>
@@ -47,7 +47,7 @@
   </div>
 
   <div class="career-hero-v5__identity">
-    <p class="eyebrow">{{ career.season_label }} · WEEK {{ career.calendar_week }} OF 52 · {{ career.season_phase|upper }}</p>
+    <p class="eyebrow">{{ career.season_label }} · {% if career.calendar_week > 52 %}SEASON TRANSITION{% else %}WEEK {{ career.calendar_week }} OF 52{% endif %} · {{ career.season_phase|upper }}</p>
     <h1>{{ career.player_name }}</h1>
     <p class="career-hero-v5__meta">{{ career.age }} · {{ career.nationality }} · {{ career.position }} · {{ career.club_name }} · {{ career.league_name }}</p>
 

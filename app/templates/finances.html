@@ -14,7 +14,7 @@
 
   <section class="metric-strip">
     <article><span>Available cash</span><strong>${{ "{:,}".format(career.money) }}</strong><small>Spendable now</small></article>
-    <article><span>Investment value</span><strong>${{ "{:,}".format(finance.investment_value) }}</strong><small>Market positions</small></article>
+    <article><span>Investment value</span><strong>${{ "{:,}".format(finance.investment_value) }}</strong><small class="{% if finance.investment_gain_loss >= 0 %}gain{% else %}loss{% endif %}">Unrealised P/L {{ '+' if finance.investment_gain_loss >= 0 else '-' }}${{ "{:,.0f}".format(finance.investment_gain_loss|abs) }} · {{ '+' if finance.investment_gain_loss_pct >= 0 else '' }}{{ "%.1f"|format(finance.investment_gain_loss_pct) }}%</small></article>
     <article><span>Property value</span><strong>${{ "{:,}".format(finance.property_value) }}</strong><small>Owned assets</small></article>
     <article class="featured"><span>Net worth</span><strong>${{ "{:,}".format(finance.net_worth) }}</strong><small>Cash + assets</small></article>
   </section>
@@ -58,6 +58,7 @@
 
   <section class="surface" id="investments">
     <div class="section-head"><div class="section-title"><span class="section-icon"><svg><use href="#i-chart"></use></svg></span><div><p class="eyebrow">INVESTMENT MARKET</p><h2>Live virtual portfolio</h2><p class="muted">Prices move every career week. Charts use your actual stored price history.</p></div></div><span class="live-pill"><i></i> Week {{ career.calendar_week }} market</span></div>
+    <p class="muted investment-price-note">Prices move when a career week advances. Refreshing only reloads the latest stored price.</p>
     <div class="instrument-grid">
       {% for item in finance.instruments %}
       <article class="instrument-card">
@@ -69,7 +70,7 @@
       {% endfor %}
     </div>
 
-    {% if finance.positions %}<div class="subsection-head"><h3>Open positions</h3><span>{{ finance.positions|length }} holdings</span></div><div class="position-list">{% for item in finance.positions %}<article><div><span class="position-ticker">{{ item.code }}</span><strong>{{ item.name }}</strong><small>{{ "%.3f"|format(item.units) }} units · average ${{ "%.2f"|format(item.average_cost) }}</small></div><div class="position-value"><strong>${{ "{:,.0f}".format(item.units * item.current_price) }}</strong><form data-live-form method="post" action="{{ url_for('main.investment_sell', instrument_id=item.instrument_id) }}"><select name="percent"><option value="25">Sell 25%</option><option value="50">Sell 50%</option><option value="100">Sell all</option></select><button class="btn btn-small">Confirm</button></form></div></article>{% endfor %}</div>{% endif %}
+    {% if finance.positions %}<div class="subsection-head"><h3>Open positions</h3><span>{{ finance.positions|length }} holdings</span></div><div class="position-list">{% for item in finance.positions %}<article><div><span class="position-ticker">{{ item.code }}</span><strong>{{ item.name }}</strong><small>{{ "%.3f"|format(item.units) }} units · average ${{ "%.2f"|format(item.average_cost) }} · cost ${{ "{:,.0f}".format(item.cost_basis) }}</small></div><div class="position-value"><strong>${{ "{:,.0f}".format(item.current_value) }}</strong><small class="{% if item.gain_loss >= 0 %}gain{% else %}loss{% endif %}">{{ '+' if item.gain_loss >= 0 else '-' }}${{ "{:,.0f}".format(item.gain_loss|abs) }} · {{ '+' if item.gain_loss_pct >= 0 else '' }}{{ "%.1f"|format(item.gain_loss_pct) }}%</small><form data-live-form method="post" action="{{ url_for('main.investment_sell', instrument_id=item.instrument_id) }}"><select name="percent"><option value="25">Sell 25%</option><option value="50">Sell 50%</option><option value="100">Sell all</option></select><button class="btn btn-small">Confirm</button></form></div></article>{% endfor %}</div>{% endif %}
   </section>
 
   <section class="surface" id="property">

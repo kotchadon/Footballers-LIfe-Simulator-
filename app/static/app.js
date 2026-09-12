@@ -427,11 +427,6 @@
       setTrainingFocus(document.querySelector(`[data-training-focus="${mappings[key]}"]`));
       return true;
     }
-    if (key === "c") {
-      event.preventDefault();
-      submitContinue();
-      return true;
-    }
     return false;
   }
 
@@ -773,7 +768,7 @@
   const replay = page === "match" ? setupMatchReplay() : null;
 
   document.addEventListener("keydown", (event) => {
-    if (event.metaKey || event.ctrlKey || event.altKey || isTypingTarget(event.target)) return;
+    if (event.metaKey || event.ctrlKey || event.altKey || event.repeat || isTypingTarget(event.target)) return;
     const key = event.key.toLowerCase();
 
     if (key === "?" || (key === "/" && event.shiftKey)) {
@@ -783,6 +778,12 @@
     }
     if (shortcutDialog?.open) {
       if (key === "escape") shortcutDialog.close();
+      return;
+    }
+
+    if (key === "c" && document.querySelector(".keyboard-continue")) {
+      event.preventDefault();
+      submitContinue();
       return;
     }
 
