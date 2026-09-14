@@ -178,3 +178,79 @@ def test_slice2_ball_is_driven_by_tactical_possession():
     assert "ownerActorId" in text
     assert "selectCarrier" in text
     assert "updateBall" in text
+
+def test_slice3_ball_and_animation_modules_exist():
+    expected = {"ball.js", "animation-controller.js"}
+    assert expected <= {path.name for path in MATCH_DIR.iterdir() if path.is_file()}
+
+
+def test_ball_controller_supports_control_pass_cross_shot_and_deflection():
+    text = (MATCH_DIR / "ball.js").read_text()
+    assert "export function createBallController" in text
+    for state in (
+        "CONTROLLED",
+        "PASS",
+        "LONG_BALL",
+        "CROSS",
+        "SHOT",
+        "DEFLECTION",
+        "KEEPER_HELD",
+    ):
+        assert state in text
+    for method in ("control(", "pass(", "cross(", "shoot(", "deflect(", "update("):
+        assert method in text
+
+
+def test_ball_controller_uses_visual_height_arc_and_no_unseeded_random():
+    text = (MATCH_DIR / "ball.js").read_text()
+    assert "4 * action.maxHeight * progress * (1 - progress)" in text
+    assert "Math.random(" not in text
+
+
+def test_animation_controller_has_timed_action_states():
+    text = (MATCH_DIR / "animation-controller.js").read_text()
+    assert "export function createAnimationController" in text
+    assert "play(actorId" in text
+    assert "getState(actorId" in text
+    assert "update(dtSeconds" in text
+    for state in ("RECEIVE", "DRIBBLE", "PASS", "LONG_PASS", "CROSS", "SHOOT", "GK_DIVE"):
+        assert state in text
+
+
+def test_player_rig_contains_receive_dribble_cross_and_long_pass_poses():
+    text = (MATCH_DIR / "player-rig.js").read_text()
+    for state in ("RECEIVE", "DRIBBLE", "LONG_PASS", "CROSS"):
+        assert state in text
+
+
+def test_tactical_engine_runs_visual_pass_sequences_between_carriers():
+    text = (MATCH_DIR / "tactical-engine.js").read_text()
+    assert 'from "./ball.js"' in text
+    assert 'from "./animation-controller.js"' in text
+    assert "schedulePass" in text
+    assert "selectReceiver" in text
+    assert "passClock" in text
+    assert "ballController.update" in text
+    assert "animationController.update" in text
+
+
+def test_tactical_filler_does_not_trigger_visual_shot_actions():
+    text = (MATCH_DIR / "tactical-engine.js").read_text()
+    section = text.split("function schedulePass", 1)[1].split("function updateTeamStates", 1)[0]
+    assert ".shoot(" not in section
+    assert '"SHOOT"' not in section
+
+
+def test_pass_sequences_have_receive_and_passing_body_animation():
+    text = (MATCH_DIR / "tactical-engine.js").read_text()
+    assert '"PASS"' in text
+    assert '"LONG_PASS"' in text
+    assert '"CROSS"' in text
+    assert '"RECEIVE"' in text
+
+
+def test_renderer_still_draws_ball_height_and_shadow():
+    text = (MATCH_DIR / "renderer.js").read_text()
+    assert "ball.height" in text
+    assert "ground = projection" in text
+    assert "ctx.ellipse" in text
