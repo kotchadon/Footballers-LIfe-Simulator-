@@ -1,0 +1,465 @@
+import {formationAnchors} from "./formations.js";
+import {integrateMovement} from "./movement.js";
+import {createPrng, sampleSeed} from "./prng.js";
+
+export const TACTICAL_PHASES = Object.freeze([
+  "BUILDUP",
+  "PROGRESSION",
+  "FINAL_THIRD",
+  "TRANSITION_ATTACK",
+  "TRANSITION_DEFENCE",
+  "DEFENSIVE_BLOCK",
+]);
+
+const ATTACK_ROLES = new Set(["LW", "RW", "LM", "RM", "ST", "LST", "RST", "CAM"]);
+const MIDFIELD_ROLES = new Set(["DM", "LDM", "RDM", "CM", "LCM", "RCM", "CAM"]);
+const WIDE_ROLES = new Set(["LB", "RB", "LWB", "RWB", "LW", "RW", "LM", "RM"]);
+const DEFENDER_ROLES = new Set(["LB", "RB", "LWB", "RWB", "CB", "LCB", "RCB"]);
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function distance(a, b) {
+  return Math.hypot(Number(a.x) - Number(b.x), Number(a.y) - Number(b.y));
+}
+
+function teamPlan(plan, team) {
+  return team === "home" ? plan.home : plan.away;
+}
+
+function scoreContext(team, context) {
+  const home = Number(context.homeScore || 0);
+  const away = Number(context.awayScore || 0);
+  if (team === "home") {
+    return {trailing: home < away, leading: home > away};
+  }
+  return {trailing: away < home, leading: away > home};
+}
+
+function baseTeamState(plan, team) {
+  const side = teamPlan(plan, team);
+  return {
+    team,
+    formation: side.formation,
+    direction: Number(side.attacking_direction || (team === "home" ? 1 : -1)),
+    possession: team === "home",
+    phase: team === "home" ? "BUILDUP" : "DEFENSIVE_BLOCK",
+    width: 1,
+    compactness: 1,
+    lineHeight: 0,
+    pressIntensity: .55,
+    tempo: 1,
+    primaryPresserId: null,
+    coverActorId: null,
+  };
+}
+
+function initialActor(actor, plan) {
+  const side = teamPlan(plan, actor.team);
+  const anchors = formationAnchors(side.formation, side.attacking_direction);
+  const anchor = anchors[actor.role] || [actor.team === "home" ? 35 : 65, 50];
+  const pace = Number(actor.attributes?.pace || 60);
+  const acceleration = Number(actor.attributes?.acceleration || pace);
+
+  return {
+    actorId: actor.actor_id,
+    displayName: actor.display_name,
+    shirtNumber: actor.shirt_number,
+    role: actor.role,
+    team: actor.team,
+    isUser: actor.actor_id === plan.user_actor_id,
+    x: anchor[0],
+    y: anchor[1],
+    anchorX: anchor[0],
+    anchorY: anchor[1],
+    targetX: anchor[0],
+    targetY: anchor[1],
+    vx: 0,
+    vy: 0,
+    heading: actor.team === "home" ? 0 : Math.PI,
+    maxSpeed: 7 + pace * .09,
+    acceleration: 18 + acceleration * .25,
+    deceleration: 28 + acceleration * .24,
+    staminaFactor: clamp(Number(actor.attributes?.stamina || 72) / 100, .45, 1),
+    animationState: actor.role === "GK" ? "GK_SET" : null,
+    tacticalIntent: "holdShape",
+    markingTarget: null,
+    supportTarget: null,
+  };
+}
+
+function nearestOutfieldActors(actors, team, point, count = 2) {
+  return actors
+    .filter((actor) => actor.team === team && actor.role !== "GK")
+    .map((actor) => ({actor, d: distance(actor, point)}))
+    .sort((a, b) => a.d - b.d)
+    .slice(0, count)
+    .map((item) => item.actor);
+}
+
+function roleMovementOffset(actor, teamState, phase, ball, phaseIndex) {
+  const direction = teamState.direction;
+  const attacking = teamState.possession;
+  const seed = sampleSeed(phaseIndex + 1, actor.actorId, phase);
+  const pulse = ((seed % 1000) / 999) * 2 - 1;
+
+  let x = 0;
+  let y = 0;
+  let intent = attacking ? "supportRun" : "holdShape";
+
+  if (actor.role === "GK") {
+    return {
+      x: direction * (attacking ? 2.2 : .5),
+      y: (ball.y - 50) * .05,
+      intent: "keeperAngle",
+    };
+  }
+
+  if (WIDE_ROLES.has(actor.role)) {
+    y += actor.anchorY < 50 ? -3.4 * teamState.width : 3.4 * teamState.width;
+  }
+
+  if (attacking && ["LB", "RB", "LWB", "RWB"].includes(actor.role)) {
+    x += direction * (phase === "FINAL_THIRD" ? 10 : 6);
+    intent = "overlap";
+  }
+
+  if (attacking && ATTACK_ROLES.has(actor.role)) {
+    if (phase === "PROGRESSION") {
+      x += direction * (4 + Math.abs(pulse) * 3);
+      intent = "supportRun";
+    }
+    if (phase === "FINAL_THIRD") {
+      x += direction * (8 + Math.abs(pulse) * 5);
+      y += pulse * 3;
+      intent = "runBehind";
+    }
+    if (phase === "TRANSITION_ATTACK") {
+      x += direction * (10 + Math.abs(pulse) * 4);
+      intent = "runBehind";
+    }
+  }
+
+  if (attacking && MIDFIELD_ROLES.has(actor.role)) {
+    x += direction * (phase === "BUILDUP" ? 1.5 : phase === "FINAL_THIRD" ? 5 : 3);
+    y += (ball.y - actor.anchorY) * .10;
+    intent = "supportRun";
+  }
+
+  if (!attacking && DEFENDER_ROLES.has(actor.role)) {
+    x -= direction * (phase === "DEFENSIVE_BLOCK" ? 3 : 1);
+    intent = "recover";
+  }
+
+  return {x, y, intent};
+}
+
+function phaseShapeSettings(teamState, context) {
+  const {trailing, leading} = scoreContext(teamState.team, context);
+  const late = Number(context.minute || 0) >= 70;
+
+  let width = teamState.possession ? 1.12 : .84;
+  let compactness = teamState.possession ? .92 : 1.18;
+  let lineHeight = 0;
+  let pressIntensity = teamState.possession ? .38 : .62;
+  let tempo = 1;
+
+  if (teamState.phase === "FINAL_THIRD") {
+    width += .10;
+    lineHeight += 3;
+  }
+  if (teamState.phase === "TRANSITION_ATTACK") {
+    lineHeight += 5;
+    tempo += .16;
+  }
+  if (teamState.phase === "DEFENSIVE_BLOCK") {
+    width -= .08;
+    compactness += .12;
+    lineHeight -= 2;
+  }
+
+  if (late && trailing) {
+    lineHeight += 5;
+    width += .08;
+    pressIntensity += .18;
+    tempo += .18;
+  }
+  if (late && leading) {
+    lineHeight -= 4;
+    width -= .05;
+    compactness += .08;
+    pressIntensity -= .08;
+    tempo -= .08;
+  }
+
+  return {
+    width: clamp(width, .72, 1.32),
+    compactness: clamp(compactness, .78, 1.38),
+    lineHeight,
+    pressIntensity: clamp(pressIntensity, .28, .92),
+    tempo: clamp(tempo, .82, 1.32),
+  };
+}
+
+function suitableCarrier(actor, phase) {
+  if (actor.role === "GK") return phase === "BUILDUP" ? .3 : 0;
+
+  if (phase === "BUILDUP") {
+    return DEFENDER_ROLES.has(actor.role) || ["DM", "LDM", "RDM"].includes(actor.role) ? 1 : .2;
+  }
+  if (phase === "PROGRESSION") {
+    return MIDFIELD_ROLES.has(actor.role) || WIDE_ROLES.has(actor.role) ? 1 : .35;
+  }
+  if (phase === "FINAL_THIRD") {
+    return ATTACK_ROLES.has(actor.role) ? 1 : .25;
+  }
+  if (phase === "TRANSITION_ATTACK") {
+    return ATTACK_ROLES.has(actor.role) || MIDFIELD_ROLES.has(actor.role) ? 1 : .25;
+  }
+  return .5;
+}
+
+function selectCarrier(actors, team, phase, seed) {
+  const candidates = actors
+    .filter((actor) => actor.team === team)
+    .map((actor) => ({actor, weight: suitableCarrier(actor, phase)}))
+    .filter((item) => item.weight > 0);
+
+  if (!candidates.length) return null;
+
+  const rng = createPrng(seed);
+  const total = candidates.reduce((sum, item) => sum + item.weight, 0);
+  let roll = rng() * total;
+
+  for (const item of candidates) {
+    roll -= item.weight;
+    if (roll <= 0) return item.actor;
+  }
+  return candidates[candidates.length - 1].actor;
+}
+
+function nextAttackingPhase(currentPhase, rng) {
+  if (currentPhase === "BUILDUP") return "PROGRESSION";
+  if (currentPhase === "PROGRESSION") return rng() < .68 ? "FINAL_THIRD" : "BUILDUP";
+  if (currentPhase === "FINAL_THIRD") return rng() < .34 ? "TRANSITION_DEFENCE" : "BUILDUP";
+  if (currentPhase === "TRANSITION_ATTACK") return rng() < .68 ? "PROGRESSION" : "FINAL_THIRD";
+  return "BUILDUP";
+}
+
+export function createTacticalEngine(plan) {
+  const actors = plan.actors.map((actor) => initialActor(actor, plan));
+  const teams = {
+    home: baseTeamState(plan, "home"),
+    away: baseTeamState(plan, "away"),
+  };
+
+  let possessionTeam = "home";
+  let phaseIndex = 0;
+  let phaseElapsed = 0;
+  let phaseDuration = 4.2;
+  let attackingPhase = "BUILDUP";
+  const rng = createPrng(sampleSeed(plan.seed, "tactical-phases"));
+
+  let carrier = selectCarrier(
+    actors,
+    possessionTeam,
+    attackingPhase,
+    sampleSeed(plan.seed, "carrier", phaseIndex),
+  );
+
+  const ball = {
+    x: Number(plan.initial_ball?.x ?? 50),
+    y: Number(plan.initial_ball?.y ?? 50),
+    height: 0,
+    ownerActorId: carrier?.actorId || null,
+    state: "CONTROLLED",
+  };
+
+  function resetPhase() {
+    phaseIndex += 1;
+    phaseElapsed = 0;
+
+    const turnoverChance =
+      attackingPhase === "FINAL_THIRD"
+        ? .42
+        : attackingPhase === "TRANSITION_DEFENCE"
+          ? .74
+          : .16;
+
+    if (rng() < turnoverChance) {
+      possessionTeam = possessionTeam === "home" ? "away" : "home";
+      attackingPhase = "TRANSITION_ATTACK";
+    } else {
+      attackingPhase = nextAttackingPhase(attackingPhase, rng);
+    }
+
+    phaseDuration = 3.4 + rng() * 3.1;
+    carrier = selectCarrier(
+      actors,
+      possessionTeam,
+      attackingPhase,
+      sampleSeed(plan.seed, "carrier", phaseIndex, possessionTeam, attackingPhase),
+    );
+    ball.ownerActorId = carrier?.actorId || null;
+  }
+
+  function updateTeamStates(context) {
+    for (const team of ["home", "away"]) {
+      const state = teams[team];
+      state.possession = team === possessionTeam;
+      state.phase = state.possession
+        ? attackingPhase
+        : attackingPhase === "TRANSITION_ATTACK"
+          ? "TRANSITION_DEFENCE"
+          : "DEFENSIVE_BLOCK";
+
+      Object.assign(state, phaseShapeSettings(state, context));
+      state.primaryPresserId = null;
+      state.coverActorId = null;
+    }
+  }
+
+  function updatePressing() {
+    const defendingTeam = possessionTeam === "home" ? "away" : "home";
+    const defending = teams[defendingTeam];
+    const nearest = nearestOutfieldActors(actors, defendingTeam, ball, 2);
+
+    defending.primaryPresserId = nearest[0]?.actorId || null;
+    defending.coverActorId = nearest[1]?.actorId || null;
+  }
+
+  function baseTarget(actor) {
+    const state = teams[actor.team];
+
+    const possessionXShift = state.direction * (
+      state.possession
+        ? state.phase === "FINAL_THIRD"
+          ? 8
+          : state.phase === "TRANSITION_ATTACK"
+            ? 10
+            : 4
+        : -2
+    );
+
+    const ballSideShift = (ball.y - 50) * (state.possession ? .25 : .32);
+    const widthDelta = (actor.anchorY - 50) * (state.width - 1);
+    const compactY = 50 + (actor.anchorY - 50) / state.compactness;
+    const role = roleMovementOffset(actor, state, state.phase, ball, phaseIndex);
+
+    let x = actor.anchorX + possessionXShift + state.direction * state.lineHeight + role.x;
+    let y = compactY + ballSideShift + widthDelta + role.y;
+    let intent = role.intent;
+
+    if (state.primaryPresserId === actor.actorId) {
+      const pressureDistance = 2.2 + (1 - state.pressIntensity) * 3.2;
+      x = ball.x - state.direction * pressureDistance;
+      y = ball.y;
+      intent = "press";
+    } else if (state.coverActorId === actor.actorId) {
+      x = (actor.anchorX + ball.x) * .5;
+      y = (actor.anchorY + ball.y) * .5;
+      intent = "cover";
+    }
+
+    if (actor.role === "GK") {
+      const ownGoalX = state.direction > 0 ? 5 : 95;
+      x = ownGoalX + state.direction * clamp(Math.abs(ball.x - ownGoalX) * .06, 1, 7);
+      y = 50 + (ball.y - 50) * .16;
+    }
+
+    actor.tacticalIntent = intent;
+
+    return {
+      x: clamp(x, actor.role === "GK" ? 2 : 4, actor.role === "GK" ? 98 : 96),
+      y: clamp(y, 6, 94),
+    };
+  }
+
+  function updateBall(dt) {
+    const owner = actors.find((actor) => actor.actorId === ball.ownerActorId);
+    if (!owner) return;
+
+    const direction = teams[owner.team].direction;
+    const touchDistance = owner.role === "GK" ? 0 : 1.15;
+    const targetX = owner.x + direction * touchDistance;
+    const targetY = owner.y;
+    const response = clamp(dt * 8.5, 0, 1);
+
+    ball.x += (targetX - ball.x) * response;
+    ball.y += (targetY - ball.y) * response;
+    ball.height = 0;
+    ball.state = "CONTROLLED";
+  }
+
+  function update(dtSeconds, context = {}) {
+    const dt = clamp(Number(dtSeconds) || 0, 0, .05);
+    phaseElapsed += dt * teams[possessionTeam].tempo;
+
+    if (phaseElapsed >= phaseDuration) {
+      resetPhase();
+    }
+
+    updateTeamStates(context);
+    updatePressing();
+
+    for (const actor of actors) {
+      const target = baseTarget(actor);
+      actor.targetX = target.x;
+      actor.targetY = target.y;
+
+      const teamTempo = teams[actor.team].tempo;
+      const staminaPenalty =
+        Number(context.minute || 0) >= 70
+          ? .86 + actor.staminaFactor * .14
+          : 1;
+
+      integrateMovement(
+        actor,
+        target,
+        dt,
+        {
+          maxSpeed: actor.maxSpeed * teamTempo * staminaPenalty,
+          acceleration: actor.acceleration * staminaPenalty,
+          deceleration: actor.deceleration,
+        },
+      );
+
+      if (actor.role === "GK") {
+        actor.animationState = "GK_SET";
+      } else if (
+        actor.tacticalIntent === "press"
+        && Math.hypot(actor.vx, actor.vy) > 5
+      ) {
+        actor.animationState = "SPRINT";
+      } else {
+        actor.animationState = null;
+      }
+    }
+
+    updateBall(dt);
+
+    return {
+      actors,
+      ball,
+      teams,
+      possessionTeam,
+      phase: attackingPhase,
+      phaseIndex,
+    };
+  }
+
+  return {
+    update,
+    getState() {
+      return {
+        actors,
+        ball,
+        teams,
+        possessionTeam,
+        phase: attackingPhase,
+        phaseIndex,
+      };
+    },
+  };
+}

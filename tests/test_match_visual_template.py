@@ -68,12 +68,13 @@ def test_renderer_uses_canvas_dpr_projection_and_failure_hook():
     assert "onError(error)" in text
 
 
-def test_bootstrap_uses_animation_frames_and_server_visual_plan():
+def test_bootstrap_delegates_animation_to_match_engine_and_uses_server_visual_plan():
     text = (MATCH_DIR / "bootstrap.js").read_text()
-    assert "requestAnimationFrame" in text
     assert "root.dataset.visualEndpoint" in text
-    assert "formationAnchors" in text
-    assert "integrateMovement" in text
+    assert 'from "./match-engine.js"' in text
+    assert 'from "./tactical-engine.js"' in text
+    assert "createMatchEngine" in text
+    assert "createTacticalEngine" in text
     assert "Math.random(" not in text
 
 
@@ -97,3 +98,83 @@ def test_visual_plan_api_is_presentation_only():
     helper = services.split("def get_match_visual_plan(", 1)[1].split("def get_match_session_view(", 1)[0]
     assert "simulation_json" in helper
     assert 'snapshot.get("visual")' in helper
+
+def test_slice2_tactical_engine_modules_exist():
+    expected = {"tactical-engine.js", "match-engine.js"}
+    assert expected <= {path.name for path in MATCH_DIR.iterdir() if path.is_file()}
+
+
+def test_tactical_engine_has_real_football_phases_and_no_unseeded_random():
+    text = (MATCH_DIR / "tactical-engine.js").read_text()
+    assert "export function createTacticalEngine" in text
+    for phase in (
+        "BUILDUP",
+        "PROGRESSION",
+        "FINAL_THIRD",
+        "TRANSITION_ATTACK",
+        "TRANSITION_DEFENCE",
+        "DEFENSIVE_BLOCK",
+    ):
+        assert phase in text
+    assert "Math.random(" not in text
+
+
+def test_tactical_engine_uses_localized_pressing_and_cover():
+    text = (MATCH_DIR / "tactical-engine.js").read_text()
+    assert "primaryPresserId" in text
+    assert "coverActorId" in text
+    assert "nearestOutfieldActors" in text
+    assert "pressIntensity" in text
+
+
+def test_tactical_engine_changes_shape_for_possession_and_ball_side():
+    text = (MATCH_DIR / "tactical-engine.js").read_text()
+    assert "possessionXShift" in text
+    assert "ballSideShift" in text
+    assert "compactness" in text
+    assert "width" in text
+
+
+def test_tactical_engine_has_role_specific_off_ball_runs():
+    text = (MATCH_DIR / "tactical-engine.js").read_text()
+    assert "roleMovementOffset" in text
+    assert "overlap" in text
+    assert "runBehind" in text
+    assert "supportRun" in text
+
+
+def test_tactical_engine_responds_to_score_and_late_match_context():
+    text = (MATCH_DIR / "tactical-engine.js").read_text()
+    assert "homeScore" in text
+    assert "awayScore" in text
+    assert "context.minute" in text
+    assert ">= 70" in text
+    assert "trailing" in text
+    assert "leading" in text
+
+
+def test_match_engine_owns_animation_loop_pause_and_hidden_tab_behavior():
+    text = (MATCH_DIR / "match-engine.js").read_text()
+    assert "export function createMatchEngine" in text
+    assert "requestAnimationFrame" in text
+    assert "visibilitychange" in text
+    assert "setSpeed" in text
+    assert "pause" in text
+    assert "resume" in text
+
+
+def test_bootstrap_uses_tactical_engine_instead_of_manual_sine_drift():
+    text = (MATCH_DIR / "bootstrap.js").read_text()
+    assert 'from "./tactical-engine.js"' in text
+    assert 'from "./match-engine.js"' in text
+    assert "createTacticalEngine" in text
+    assert "createMatchEngine" in text
+    assert "amplitudeX" not in text
+    assert "amplitudeY" not in text
+
+
+def test_slice2_ball_is_driven_by_tactical_possession():
+    text = (MATCH_DIR / "tactical-engine.js").read_text()
+    assert "ownerActorId" in text
+    assert "selectCarrier" in text
+    assert "updateBall" in text
