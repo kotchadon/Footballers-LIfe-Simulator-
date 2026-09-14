@@ -407,3 +407,15 @@ def world_league(league_id):
         "world.html", career=career, world=get_world_overview(career["id"]), selected=selected,
         entries=get_competition_entries(career["id"]), honours=get_competition_honours(career["id"]),
     )
+
+@bp.get("/api/matches/<session_id>/visual-plan")
+def match_visual_plan_api(session_id):
+    from .services import get_match_visual_plan
+
+    career = get_active_career()
+    if career is None:
+        return jsonify({"ok": False, "message": "Create a career first."}), 404
+    plan = get_match_visual_plan(session_id, career["id"])
+    if plan is None:
+        return jsonify({"ok": False, "message": "Match not found."}), 404
+    return jsonify({"ok": True, "visual": plan})

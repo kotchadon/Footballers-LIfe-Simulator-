@@ -9,6 +9,7 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='theme-ps2.css') }}?v=1.0.0">
   <script defer src="{{ url_for('static', filename='assets/real/logo-manifest.js', v='6.5.0') }}"></script>
   <script defer src="{{ url_for('static', filename='app.js', v='6.5.0') }}"></script>
+  {% block head_extra %}{% endblock %}
 </head>
 <body data-page="{% block page_id %}default{% endblock %}">
   <div class="ambient-stadium" aria-hidden="true"><i></i><i></i><i></i></div>
@@ -104,5 +105,6 @@
       <section><p class="shortcut-section-title">MATCH CONTROL</p><div class="shortcut-grid"><div><kbd>Space</kbd><span>Pause / resume replay</span></div><div><kbd>1–3</kbd><span>Replay speed</span></div><div><kbd>Enter</kbd><span>Skip to full time</span></div></div></section>
     </div>
   </dialog>
+  {% block scripts_extra %}{% endblock %}
 </body>
 </html>

@@ -792,6 +792,22 @@ def prepare_next_match(career_id, seed=None):
     return db.execute("SELECT * FROM match_sessions WHERE public_id = ?", (public_id,)).fetchone()
 
 
+
+def get_match_visual_plan(public_id, career_id):
+    row = get_db().execute(
+        "SELECT seed, simulation_json FROM match_sessions WHERE public_id = ? AND career_id = ?",
+        (public_id, career_id),
+    ).fetchone()
+    if row is None:
+        return None
+    snapshot = json.loads(row["simulation_json"])
+    plan = snapshot.get("visual")
+    if not isinstance(plan, dict):
+        plan = build_visual_plan(snapshot, int(row["seed"]))
+    return plan
+
+
+
 def get_match_session_view(public_id, career_id):
     row = get_db().execute(
         "SELECT * FROM match_sessions WHERE public_id = ? AND career_id = ?",

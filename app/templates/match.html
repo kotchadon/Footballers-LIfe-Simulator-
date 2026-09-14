@@ -1,6 +1,12 @@
 {% extends "base.html" %}
 {% block title %}Live Match Centre{% endblock %}
 {% block page_id %}match{% endblock %}
+{% block head_extra %}
+<link rel="stylesheet" href="{{ url_for('static', filename='match/match.css', v='1.0.0') }}">
+{% endblock %}
+{% block scripts_extra %}
+<script type="module" src="{{ url_for('static', filename='match/bootstrap.js', v='1.0.0') }}"></script>
+{% endblock %}
 {% block content %}
 <section class="match-stage" id="match-stage"
   data-session-id="{{ session.public_id }}"
@@ -8,14 +14,15 @@
   data-event-count="{{ session.event_count }}"
   data-player-team-home="{{ 'true' if session.player_team_is_home else 'false' }}"
   data-advance-endpoint="{{ url_for('main.advance_match_api', session_id=session.public_id) }}"
-  data-complete-endpoint="{{ url_for('main.complete_match_api', session_id=session.public_id) }}">
+  data-complete-endpoint="{{ url_for('main.complete_match_api', session_id=session.public_id) }}"
+  data-visual-endpoint="{{ url_for('main.match_visual_plan_api', session_id=session.public_id) }}">
   <div class="match-stage-top">
     <span class="live-badge"><i></i> SEALED MATCH REPLAY</span>
     <div class="match-clock"><strong id="match-minute">00'</strong><span id="match-status">Preparing</span></div>
     <div class="speed-controls" aria-label="Replay speed">
       <button type="button" data-match-speed="1" class="active">1×</button>
       <button type="button" data-match-speed="2">2×</button>
-      <button type="button" data-match-speed="3">3×</button>
+      <button type="button" data-match-speed="4">4×</button>
     </div>
   </div>
 
@@ -25,7 +32,45 @@
     <div class="team-side away"><span class="club-monogram">{{ session.away_name[:2]|upper }}</span><h1>{{ session.away_name }}</h1></div>
   </div>
 
-  <div class="match-controls">
+
+  <div class="match-visual-shell">
+    <div class="match-visual-stage" id="match-visual-stage">
+      <svg class="match-pitch-svg" id="match-pitch-svg" viewBox="0 0 1000 620" role="img" aria-label="Broadcast tactical football pitch">
+        <defs>
+          <linearGradient id="pitch-grass" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#174b38"></stop>
+            <stop offset="100%" stop-color="#0b2d25"></stop>
+          </linearGradient>
+        </defs>
+        <polygon class="pitch-surface" points="35,90 965,90 995,570 5,570"></polygon>
+        <polyline class="pitch-line" points="35,90 965,90 995,570 5,570 35,90"></polyline>
+        <line class="pitch-line" x1="500" y1="90" x2="500" y2="570"></line>
+        <ellipse class="pitch-line pitch-centre-circle" cx="500" cy="330" rx="78" ry="118"></ellipse>
+        <circle class="pitch-dot" cx="500" cy="330" r="4"></circle>
+        <path class="pitch-line" d="M35 190 L190 205 L200 455 L12 470"></path>
+        <path class="pitch-line" d="M965 190 L810 205 L800 455 L988 470"></path>
+        <path class="pitch-line" d="M35 260 L105 267 L109 393 L22 400"></path>
+        <path class="pitch-line" d="M965 260 L895 267 L891 393 L978 400"></path>
+        <path class="goal-frame" d="M35 285 L8 290 L8 370 L25 372"></path>
+        <path class="goal-frame" d="M965 285 L992 290 L992 370 L975 372"></path>
+      </svg>
+      <canvas id="match-canvas" class="match-canvas" aria-label="Animated live football visualization"></canvas>
+      <div class="match-event-overlay" id="match-event-overlay" aria-live="polite">
+        <span>TACTICAL FEED</span>
+        <strong id="match-visual-status">Loading teams…</strong>
+      </div>
+      <div class="match-visual-fallback" id="match-visual-fallback" hidden>
+        Visual feed unavailable · commentary replay remains active.
+      </div>
+    </div>
+    <div class="match-visual-legend" aria-label="Match visualization legend">
+      <span><i class="legend-home"></i>{{ session.home_name }}</span>
+      <span><i class="legend-user"></i>{{ session.player_name }}</span>
+      <span><i class="legend-away"></i>{{ session.away_name }}</span>
+    </div>
+  </div>
+
+<div class="match-controls">
     <button type="button" class="button secondary" id="pause-replay">Pause <kbd>Space</kbd></button>
     <button type="button" class="button secondary" id="finish-replay">Skip to full time <kbd>Enter</kbd></button>
   </div>
