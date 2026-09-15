@@ -283,6 +283,8 @@ export function createTacticalEngine(plan) {
 
   let passClock = 0;
   let nextPassAt = 1.15 + rng() * .75;
+  let eventOverrideUntil = 0;
+  let eventClock = 0;
 
   function resetPhase() {
     phaseIndex += 1;
@@ -465,6 +467,221 @@ export function createTacticalEngine(plan) {
     }
   }
 
+
+  function keeperForAttackingSide(attackingSide) {
+    const defendingTeam =
+      attackingSide === "home"
+        ? "away"
+        : "home";
+
+    return actors.find(
+      (actor) =>
+        actor.team === defendingTeam
+        && actor.role === "GK",
+    ) || null;
+  }
+
+  function eventActor(
+    side,
+    preferredActorId,
+  ) {
+    if (preferredActorId) {
+      const exact = actors.find(
+        (actor) =>
+          actor.actorId === preferredActorId,
+      );
+
+      if (exact) return exact;
+    }
+
+    const team =
+      side === "away"
+        ? "away"
+        : "home";
+
+    return actors.find(
+      (actor) =>
+        actor.team === team
+        && ATTACK_ROLES.has(actor.role),
+    ) || actors.find(
+      (actor) =>
+        actor.team === team
+        && actor.role !== "GK",
+    ) || null;
+  }
+
+  function beginAuthoritativeEvent(
+    payload = {},
+  ) {
+    const side =
+      payload.side === "away"
+        ? "away"
+        : "home";
+
+    const actor = eventActor(
+      side,
+      payload.actorId,
+    );
+
+    if (!actor) return .42;
+
+    possessionTeam = side;
+
+    const start =
+      Array.isArray(payload.ballStart)
+        ? {
+            x: Number(payload.ballStart[0]),
+            y: Number(payload.ballStart[1]),
+          }
+        : {
+            x: actor.x,
+            y: actor.y,
+          };
+
+    const target =
+      Array.isArray(payload.ballTarget)
+        ? {
+            x: Number(payload.ballTarget[0]),
+            y: Number(payload.ballTarget[1]),
+          }
+        : {
+            x:
+              teams[side].direction > 0
+                ? 98
+                : 2,
+            y: 50,
+          };
+
+    actor.x = start.x;
+    actor.y = start.y;
+    actor.vx = 0;
+    actor.vy = 0;
+
+    animationController.play(
+      actor.actorId,
+      "SHOOT",
+      {
+        duration: .42,
+        priority: 10,
+      },
+    );
+
+    const keeper =
+      keeperForAttackingSide(side);
+
+    if (
+      keeper
+      && payload.outcome !== "MISS"
+    ) {
+      animationController.play(
+        keeper.actorId,
+        "GK_DIVE",
+        {
+          duration: .55,
+          priority: 10,
+        },
+      );
+    }
+
+    const duration =
+      payload.outcome === "GOAL"
+        ? .52
+        : .46;
+
+    ballController.shoot(
+      start,
+      target,
+      {
+        duration,
+        maxHeight:
+          payload.outcome === "GOAL"
+            ? 1.2
+            : .85,
+        settleToOwner: false,
+      },
+    );
+
+    eventClock = 0;
+
+    eventOverrideUntil =
+      payload.outcome === "GOAL"
+        ? 1.2
+        : .9;
+
+    return duration;
+  }
+
+  function playKeeperAction(
+    action,
+    attackingSide,
+  ) {
+    const keeper =
+      keeperForAttackingSide(
+        attackingSide === "away"
+          ? "away"
+          : "home",
+      );
+
+    if (!keeper) return;
+
+    if (action === "GK_CATCH") {
+      animationController.play(
+        keeper.actorId,
+        "GK_SET",
+        {
+          duration: .3,
+          priority: 10,
+        },
+      );
+
+      ballController.keeperHold(
+        keeper.actorId,
+      );
+
+      return;
+    }
+
+    if (action === "GK_PARRY") {
+      animationController.play(
+        keeper.actorId,
+        "GK_DIVE",
+        {
+          duration: .36,
+          priority: 10,
+        },
+      );
+
+      ballController.deflect(
+        {
+          x: ball.x,
+          y: ball.y,
+        },
+        {
+          x:
+            keeper.x
+            + teams[keeper.team].direction * 5,
+          y: keeper.y + 6,
+        },
+        {
+          duration: .34,
+          maxHeight: 1.1,
+          settleToOwner: false,
+        },
+      );
+
+      return;
+    }
+
+    animationController.play(
+      keeper.actorId,
+      "GK_DIVE",
+      {
+        duration: .52,
+        priority: 10,
+      },
+    );
+  }
+
   function updatePressing() {
     const defendingTeam = possessionTeam === "home" ? "away" : "home";
     const defending = teams[defendingTeam];
@@ -537,6 +754,7 @@ export function createTacticalEngine(plan) {
     const dt = clamp(Number(dtSeconds) || 0, 0, .05);
     phaseElapsed += dt * teams[possessionTeam].tempo;
     passClock += dt * teams[possessionTeam].tempo;
+    eventClock += dt;
     animationController.update(dt);
 
     if (phaseElapsed >= phaseDuration) {
@@ -544,7 +762,8 @@ export function createTacticalEngine(plan) {
     }
 
     if (
-      passClock >= nextPassAt
+      eventClock >= eventOverrideUntil
+      && passClock >= nextPassAt
       && !ball.action
       && ball.ownerActorId
     ) {
@@ -610,6 +829,8 @@ export function createTacticalEngine(plan) {
 
   return {
     update,
+    beginAuthoritativeEvent,
+    playKeeperAction,
     getState() {
       return {
         actors,

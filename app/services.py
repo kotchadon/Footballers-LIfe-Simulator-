@@ -8,7 +8,7 @@ import uuid
 from datetime import datetime, timezone
 
 from .db import get_db
-from .match_visuals import build_visual_plan
+from .match_visuals import build_visual_plan, visual_event_metadata
 from .calendar_engine import generate_season_calendar, get_calendar, get_week_context
 from .economy import (
     accept_endorsement as economy_accept_endorsement,
@@ -865,7 +865,16 @@ def advance_match_session(public_id, career_id, cursor):
             (revealed + 1, row["id"], revealed),
         )
         db.commit()
-    event = events[cursor]
+    event = dict(events[cursor])
+    event_sequence = int(
+        event.get("sequence", cursor)
+    )
+    event["visual"] = visual_event_metadata(
+        snapshot,
+        event,
+        event_sequence,
+        seed=int(row["seed"]),
+    )
     return True, "Event revealed.", {
         "completed": False,
         "event": event,

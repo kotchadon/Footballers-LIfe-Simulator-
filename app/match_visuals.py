@@ -178,3 +178,197 @@ def build_visual_plan(snapshot: dict[str, Any], seed: int) -> dict[str, Any]:
         "initial_ball": {"x": 50.0, "y": 50.0, "height": 0.0, "owner_actor_id": None, "state": "LOOSE"},
         "camera": {"mode": "broadcast_side", "keep_full_pitch_visible": True, "perspective": 0.18},
     }
+
+_VISUAL_EVENT_KIND_MAP = {
+    "goal_for": "goal",
+    "goal_against": "goal",
+    "player_shot_saved": "save",
+    "player_shot_off_target": "miss",
+    "yellow_card": "yellow_card",
+    "red_card": "red_card",
+    "injury": "injury",
+    "full_time": "full_time",
+}
+
+
+def _event_home_away_side(
+    snapshot: dict[str, Any],
+    event: dict[str, Any],
+) -> str:
+    fixture = dict(
+        snapshot.get("fixture") or {}
+    )
+
+    player_home = bool(
+        fixture.get("player_team_is_home")
+    )
+
+    metadata = event.get("metadata")
+    metadata = (
+        metadata
+        if isinstance(metadata, dict)
+        else {}
+    )
+
+    perspective = str(
+        metadata.get("side") or ""
+    ).lower()
+
+    if perspective == "player":
+        return "home" if player_home else "away"
+
+    if perspective == "opponent":
+        return "away" if player_home else "home"
+
+    source_kind = str(
+        event.get("kind") or ""
+    ).lower()
+
+    if source_kind == "goal_for":
+        return "home" if player_home else "away"
+
+    if source_kind == "goal_against":
+        return "away" if player_home else "home"
+
+    return "neutral"
+
+
+def _event_actor_id(
+    event: dict[str, Any],
+) -> str | None:
+    metadata = event.get("metadata")
+    metadata = (
+        metadata
+        if isinstance(metadata, dict)
+        else {}
+    )
+
+    if str(
+        metadata.get("side") or ""
+    ).lower() != "player":
+        return None
+
+    source_kind = str(
+        event.get("kind") or ""
+    ).lower()
+
+    if source_kind.startswith("player_"):
+        return "career_player"
+
+    if (
+        source_kind == "goal_for"
+        and metadata.get("contribution") == "goal"
+    ):
+        return "career_player"
+
+    return None
+
+
+def visual_event_metadata(
+    snapshot: dict[str, Any],
+    event: dict[str, Any],
+    sequence: int,
+    *,
+    seed: int,
+) -> dict[str, Any]:
+    source_kind = str(
+        event.get("kind") or "moment"
+    ).lower()
+
+    kind = _VISUAL_EVENT_KIND_MAP.get(
+        source_kind,
+        source_kind,
+    )
+
+    side = _event_home_away_side(
+        snapshot,
+        event,
+    )
+
+    actor_id = _event_actor_id(event)
+
+    local = random.Random(
+        visual_seed(
+            seed,
+            "event-visual",
+            int(sequence),
+            source_kind,
+            side,
+        )
+    )
+
+    direction = 1 if side == "home" else -1
+
+    if side in {"home", "away"}:
+        attacking_x = local.uniform(
+            66.0,
+            82.0,
+        )
+
+        start_x = (
+            attacking_x
+            if direction > 0
+            else 100.0 - attacking_x
+        )
+
+        start_y = local.uniform(
+            28.0,
+            72.0,
+        )
+
+        target_x = (
+            98.0
+            if direction > 0
+            else 2.0
+        )
+
+        target_y = local.uniform(
+            42.0,
+            58.0,
+        )
+
+        if kind == "miss":
+            target_y = local.choice(
+                [
+                    local.uniform(18.0, 34.0),
+                    local.uniform(66.0, 82.0),
+                ]
+            )
+    else:
+        start_x = 50.0
+        start_y = 50.0
+        target_x = 50.0
+        target_y = 50.0
+
+    metadata = {
+        "sequence": int(sequence),
+        "minute": int(
+            event.get("minute") or 0
+        ),
+        "source_kind": source_kind,
+        "kind": kind,
+        "side": side,
+        "actor_id": actor_id,
+        "ball_start": [
+            round(start_x, 3),
+            round(start_y, 3),
+        ],
+        "ball_target": [
+            round(target_x, 3),
+            round(target_y, 3),
+        ],
+        "tempo": (
+            "fast"
+            if kind in {"goal", "save", "miss"}
+            else "normal"
+        ),
+    }
+
+    if kind == "goal":
+        metadata["keeper_outcome"] = "concede"
+    elif kind == "save":
+        metadata["keeper_outcome"] = "save"
+    elif kind == "miss":
+        metadata["keeper_outcome"] = "miss"
+
+    return metadata

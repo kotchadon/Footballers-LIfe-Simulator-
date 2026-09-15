@@ -455,30 +455,6 @@
     const goalFlash = document.getElementById("goal-flash");
     const pitch = document.getElementById("live-pitch");
 
-    function animatePitchEvent(item) {
-      if (!pitchBall || !pitch || !item) return;
-      const kind = String(item.kind || "moment");
-      const sequence = Number(item.sequence || 0);
-      const attackingHome = ((sequence + (playerTeamHome ? 0 : 1)) % 2) === 0;
-      const targets = {
-        goal: attackingHome ? [91,50] : [9,50],
-        shot: attackingHome ? [82,36 + (sequence%3)*14] : [18,36 + (sequence%3)*14],
-        save: attackingHome ? [88,44] : [12,56],
-        corner: attackingHome ? [96,8 + (sequence%2)*84] : [4,8 + (sequence%2)*84],
-        card: [48 + (sequence%2)*8, 44 + (sequence%3)*8],
-        injury: [42 + (sequence%4)*6, 35 + (sequence%3)*14],
-        substitution: [50,92],
-        full_time: [50,50],
-      };
-      const target = targets[kind] || [20 + ((sequence*19)%60), 18 + ((sequence*31)%64)];
-      pitchBall.style.setProperty("--ball-x", `${target[0]}%`);
-      pitchBall.style.setProperty("--ball-y", `${target[1]}%`);
-      pitchBall.classList.remove("kick"); void pitchBall.offsetWidth; pitchBall.classList.add("kick");
-      if (pitchLabel) { pitchLabel.textContent = item.text || kind.replace(/_/g," "); pitchLabel.dataset.kind = kind; }
-      pitch.dataset.eventKind = kind;
-      if (kind === "goal" && goalFlash) { goalFlash.classList.remove("show"); void goalFlash.offsetWidth; goalFlash.classList.add("show"); }
-    }
-
     let cursor = 0;
     let paused = false;
     let speed = 1;
@@ -502,10 +478,9 @@
       return playerTeamHome ? {home: player, away: opponent} : {home: opponent, away: player};
     }
 
-    function addEvent(item, instant = false) {
+    function addEventImmediate(item, instant = false) {
       if (!item) return;
-      animatePitchEvent(item);
-      if (timeline.querySelector(`[data-sequence="${item.sequence}"]`)) return;
+if (timeline.querySelector(`[data-sequence="${item.sequence}"]`)) return;
       const row = document.createElement("article");
       row.className = `timeline-event ${item.kind || "moment"}`;
       row.dataset.sequence = String(item.sequence);
@@ -523,6 +498,56 @@
       awayScore.textContent = mapped.away;
       minute.textContent = item.kind === "full_time" ? "FT" : `${String(item.minute).padStart(2, "0")}'`;
       eventCount.textContent = `${Math.min(cursor + 1, totalEvents)} / ${totalEvents}`;
+    }
+
+    async function addEvent(item, instant = false) {
+      if (!item) return;
+      if (
+        timeline.querySelector(
+          `[data-sequence="${item.sequence}"]`,
+        )
+      ) return;
+
+      if (instant || !item.visual) {
+        addEventImmediate(item, instant);
+        return;
+      }
+
+      const visualPlayer =
+        window.FootyMatchVisuals?.playEvent;
+
+      if (typeof visualPlayer !== "function") {
+        addEventImmediate(item, instant);
+        return;
+      }
+
+      const VISUAL_TIMEOUT_MS = 1600;
+      let timeoutId = null;
+
+      try {
+        const timeout = new Promise((resolve) => {
+          timeoutId = window.setTimeout(
+            resolve,
+            VISUAL_TIMEOUT_MS,
+          );
+        });
+
+        await Promise.race([
+          Promise.resolve(visualPlayer(item)),
+          timeout,
+        ]);
+      } catch (error) {
+        console.error(
+          "Match event visualization failed:",
+          error,
+        );
+      } finally {
+        if (timeoutId !== null) {
+          window.clearTimeout(timeoutId);
+        }
+      }
+
+      addEventImmediate(item, false);
     }
 
     async function postJson(endpoint, payload) {
@@ -688,7 +713,7 @@
         const payload = await postJson(completeEndpoint, {skip});
         const events = payload.remaining_events || [];
         for (let index = cursor; index < events.length; index += 1) {
-          addEvent(events[index], skip);
+          await addEvent(events[index], skip);
           cursor = index + 1;
         }
         renderReport(payload);
@@ -710,7 +735,7 @@
           await finalise(false);
           return;
         }
-        addEvent(payload.event);
+        await addEvent(payload.event);
         cursor = payload.cursor;
         if (payload.event?.kind === "full_time" || !payload.has_more) {
           await finalise(false);

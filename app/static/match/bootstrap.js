@@ -1,6 +1,7 @@
 import {createRenderer} from "./renderer.js";
 import {createTacticalEngine} from "./tactical-engine.js";
 import {createMatchEngine} from "./match-engine.js";
+import {createEventChoreography} from "./event-choreography.js";
 
 const root = document.getElementById("match-stage");
 const stage = document.getElementById("match-visual-stage");
@@ -67,6 +68,24 @@ async function boot() {
     },
   });
 
+
+  const choreography =
+    createEventChoreography({
+      tactical,
+      onOverlay(message) {
+        if (visualStatus) {
+          visualStatus.textContent = message;
+        }
+      },
+    });
+
+  window.FootyMatchVisuals = {
+    async playEvent(item) {
+      if (!item?.visual) return;
+      await choreography.playEvent(item);
+    },
+  };
+
   const observer = new ResizeObserver(() => renderer.resize());
   observer.observe(stage);
 
@@ -97,6 +116,7 @@ async function boot() {
   });
 
   window.addEventListener("beforeunload", () => {
+    delete window.FootyMatchVisuals;
     observer.disconnect();
     engine.destroy();
     renderer.destroy();

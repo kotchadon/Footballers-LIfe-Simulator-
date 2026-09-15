@@ -254,3 +254,115 @@ def test_renderer_still_draws_ball_height_and_shadow():
     assert "ball.height" in text
     assert "ground = projection" in text
     assert "ctx.ellipse" in text
+
+def test_slice4_event_choreography_module_exists():
+    assert (
+        MATCH_DIR / "event-choreography.js"
+    ).exists()
+
+
+def test_event_choreography_handles_authoritative_goal_save_and_miss():
+    text = (
+        MATCH_DIR / "event-choreography.js"
+    ).read_text()
+
+    assert "export function createEventChoreography" in text
+
+    for token in (
+        "GOAL",
+        "SAVE",
+        "MISS",
+        "GK_DIVE",
+        "GK_CATCH",
+    ):
+        assert token in text
+
+    assert "playEvent" in text
+
+
+def test_advance_match_session_attaches_visual_to_only_current_event():
+    text = Path("app/services.py").read_text()
+
+    start = text.index(
+        "def advance_match_session("
+    )
+
+    end = text.index(
+        "\ndef ",
+        start + 1,
+    )
+
+    block = text[start:end]
+
+    assert "event = dict(events[cursor])" in block
+    assert (
+        'event["visual"] = visual_event_metadata('
+        in block
+    )
+    assert '"event": event' in block
+    assert '"events": events' not in block
+
+
+def test_bootstrap_consumes_visual_metadata_from_revealed_event_directly():
+    text = (
+        MATCH_DIR / "bootstrap.js"
+    ).read_text()
+
+    assert "window.FootyMatchVisuals" in text
+    assert "item?.visual" in text
+    assert "visual-event" not in text
+    assert "fetchVisualEvent" not in text
+
+
+def test_app_replay_preserves_instant_contract_and_awaits_visuals():
+    text = Path("app/static/app.js").read_text()
+
+    assert (
+        "function addEventImmediate("
+        "item, instant = false)"
+        in text
+    )
+
+    assert (
+        "async function addEvent("
+        "item, instant = false)"
+        in text
+    )
+
+    assert "await addEvent(payload.event);" in text
+    assert (
+        "await addEvent(events[index], skip);"
+        in text
+    )
+    assert "VISUAL_TIMEOUT_MS = 1600" in text
+
+
+def test_app_replay_removes_old_pitch_mutation_from_commit_path():
+    text = Path("app/static/app.js").read_text()
+
+    start = text.index(
+        "function addEventImmediate("
+        "item, instant = false)"
+    )
+
+    end = text.index(
+        "async function addEvent("
+        "item, instant = false)",
+        start,
+    )
+
+    immediate = text[start:end]
+
+    assert "animatePitchEvent(item)" not in immediate
+
+
+def test_tactical_engine_exposes_authoritative_shot_override():
+    text = (
+        MATCH_DIR / "tactical-engine.js"
+    ).read_text()
+
+    assert "beginAuthoritativeEvent" in text
+    assert "eventOverrideUntil" in text
+    assert "playKeeperAction" in text
+    assert "ballController.shoot" in text
+    assert "ballController.deflect" in text

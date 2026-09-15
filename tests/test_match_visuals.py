@@ -102,3 +102,141 @@ def test_starter_user_actor_is_present_across_many_visual_seeds():
         actor_ids = {actor["actor_id"] for actor in plan["actors"]}
         assert plan["user_actor_id"] == "career_player"
         assert "career_player" in actor_ids
+
+def test_visual_event_metadata_maps_real_ledger_goal_sides():
+    snapshot = _snapshot()
+
+    goal_for = {
+        "sequence": 0,
+        "minute": 12,
+        "kind": "goal_for",
+        "text": "GOAL!",
+        "metadata": {
+            "side": "player",
+            "contribution": "goal",
+        },
+    }
+
+    visual = match_visuals.visual_event_metadata(
+        snapshot,
+        goal_for,
+        0,
+        seed=918273,
+    )
+
+    assert visual["sequence"] == 0
+    assert visual["source_kind"] == "goal_for"
+    assert visual["kind"] == "goal"
+    assert visual["side"] == "home"
+    assert visual["actor_id"] == "career_player"
+    assert visual["keeper_outcome"] == "concede"
+
+    against = {
+        "sequence": 1,
+        "minute": 44,
+        "kind": "goal_against",
+        "text": "Goal against.",
+        "metadata": {"side": "opponent"},
+    }
+
+    visual_against = match_visuals.visual_event_metadata(
+        snapshot,
+        against,
+        1,
+        seed=918273,
+    )
+
+    assert visual_against["kind"] == "goal"
+    assert visual_against["side"] == "away"
+
+
+def test_visual_event_metadata_maps_real_saved_and_missed_shots():
+    snapshot = _snapshot()
+
+    saved = match_visuals.visual_event_metadata(
+        snapshot,
+        {
+            "sequence": 3,
+            "minute": 67,
+            "kind": "player_shot_saved",
+            "metadata": {"side": "player"},
+        },
+        3,
+        seed=918273,
+    )
+
+    missed = match_visuals.visual_event_metadata(
+        snapshot,
+        {
+            "sequence": 4,
+            "minute": 71,
+            "kind": "player_shot_off_target",
+            "metadata": {"side": "player"},
+        },
+        4,
+        seed=918273,
+    )
+
+    assert saved["kind"] == "save"
+    assert saved["side"] == "home"
+    assert saved["keeper_outcome"] == "save"
+    assert saved["actor_id"] == "career_player"
+
+    assert missed["kind"] == "miss"
+    assert missed["keeper_outcome"] == "miss"
+
+
+def test_visual_event_side_mapping_respects_away_career_team():
+    snapshot = _snapshot()
+    snapshot["fixture"]["player_team_is_home"] = False
+
+    visual = match_visuals.visual_event_metadata(
+        snapshot,
+        {
+            "sequence": 0,
+            "minute": 20,
+            "kind": "goal_for",
+            "metadata": {
+                "side": "player",
+                "contribution": "team",
+            },
+        },
+        0,
+        seed=55,
+    )
+
+    assert visual["side"] == "away"
+    assert visual["actor_id"] is None
+
+
+def test_visual_metadata_is_deterministic_and_result_neutral():
+    snapshot = _snapshot()
+
+    event = {
+        "sequence": 2,
+        "minute": 50,
+        "kind": "goal_for",
+        "metadata": {
+            "side": "player",
+            "contribution": "team",
+        },
+    }
+
+    one = match_visuals.visual_event_metadata(
+        snapshot,
+        event,
+        2,
+        seed=123,
+    )
+
+    two = match_visuals.visual_event_metadata(
+        snapshot,
+        event,
+        2,
+        seed=123,
+    )
+
+    assert one == two
+    assert "final_score" not in one
+    assert "report" not in one
+    assert "result" not in one
