@@ -8,6 +8,9 @@ const stage = document.getElementById("match-visual-stage");
 const canvas = document.getElementById("match-canvas");
 const visualStatus = document.getElementById("match-visual-status");
 const fallback = document.getElementById("match-visual-fallback");
+const matchTransitionOverlay = document.getElementById("match-transition-overlay");
+const matchTransitionText = document.getElementById("match-transition-text");
+let transitionTimer = null;
 
 if (root && stage && canvas) {
   boot().catch((error) => {
@@ -69,15 +72,25 @@ async function boot() {
   });
 
 
-  const choreography =
-    createEventChoreography({
-      tactical,
-      onOverlay(message) {
-        if (visualStatus) {
-          visualStatus.textContent = message;
-        }
-      },
-    });
+  function showTransition(message) {
+    if (visualStatus) visualStatus.textContent = message;
+    if (!matchTransitionOverlay || !matchTransitionText) return;
+
+    matchTransitionText.textContent = message;
+    matchTransitionOverlay.hidden = false;
+
+    if (transitionTimer !== null) window.clearTimeout(transitionTimer);
+    transitionTimer = window.setTimeout(() => {
+      matchTransitionOverlay.hidden = true;
+      transitionTimer = null;
+    }, 900);
+  }
+
+  const choreography = createEventChoreography({
+    tactical,
+    matchEngine: engine,
+    onOverlay: showTransition,
+  });
 
   window.FootyMatchVisuals = {
     async playEvent(item) {

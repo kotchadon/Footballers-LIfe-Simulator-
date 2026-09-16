@@ -70,7 +70,10 @@ function initialActor(actor, plan) {
     shirtNumber: actor.shirt_number,
     role: actor.role,
     team: actor.team,
-    isUser: actor.actor_id === plan.user_actor_id,
+    isUser:
+      actor.actor_id === plan.user_actor_id
+      || actor.actor_id === plan.career_player?.actor_id
+      || actor.visual_profile?.is_user === true,
     x: anchor[0],
     y: anchor[1],
     anchorX: anchor[0],
@@ -248,6 +251,13 @@ function nextAttackingPhase(currentPhase, rng) {
   if (currentPhase === "TRANSITION_ATTACK") return rng() < .68 ? "PROGRESSION" : "FINAL_THIRD";
   return "BUILDUP";
 }
+
+const TEN_MAN_SHAPES = Object.freeze({
+  compact: Object.freeze([
+    [20,18],[17,40],[17,60],[20,82],
+    [42,24],[39,50],[42,76],[65,36],[68,64],
+  ]),
+});
 
 export function createTacticalEngine(plan) {
   const actors = plan.actors.map((actor) => initialActor(actor, plan));
@@ -508,6 +518,290 @@ export function createTacticalEngine(plan) {
         actor.team === team
         && actor.role !== "GK",
     ) || null;
+  }
+
+
+  function removeActor(actorId) {
+    if (!actorId) return null;
+    const index = actors.findIndex((actor) => actor.actorId === actorId);
+    if (index < 0 || actors[index].role === "GK") return null;
+    const [removed] = actors.splice(index, 1);
+    animationController.cancelActor?.(actorId);
+    if (ball.ownerActorId === actorId) ballController.control(null);
+    if (carrier?.actorId === actorId) {
+      carrier = selectCarrier(
+        actors, possessionTeam, attackingPhase,
+        sampleSeed(plan.seed, "carrier-after-removal", phaseIndex, actorId),
+      );
+      if (carrier && !ball.action) ballController.control(carrier.actorId);
+    }
+    return removed;
+  }
+
+  function activateActor(payload) {
+    if (!payload?.actor_id) return null;
+    const existing = actors.find((actor) => actor.actorId === payload.actor_id);
+    if (existing) return existing;
+
+    const team = payload.team === "away" ? "away" : "home";
+    const role = String(payload.role || "CM").toUpperCase();
+    const candidates = actors.filter(
+      (actor) => actor.team === team && actor.role !== "GK" && !actor.isUser,
+    );
+    const outgoing =
+      candidates.find((actor) => actor.role === role)
+      || candidates.slice().sort(
+        (a, b) => Math.abs(b.anchorX - 50) - Math.abs(a.anchorX - 50),
+      )[0]
+      || null;
+
+    if (outgoing) removeActor(outgoing.actorId);
+
+    const runtime = initialActor(
+      {
+        ...payload,
+        team,
+        visual_profile: {
+          ...(payload.visual_profile || {}),
+          is_user: true,
+          kit_slot: team,
+        },
+      },
+      plan,
+    );
+    runtime.isUser = true;
+
+    if (outgoing) {
+      runtime.x = outgoing.x;
+      runtime.y = outgoing.y;
+      runtime.anchorX = outgoing.anchorX;
+      runtime.anchorY = outgoing.anchorY;
+      runtime.targetX = outgoing.targetX;
+      runtime.targetY = outgoing.targetY;
+    }
+
+    actors.push(runtime);
+    return runtime;
+  }
+
+  function switchEnds() {
+    for (const team of ["home", "away"]) teams[team].direction *= -1;
+    for (const actor of actors) {
+      actor.x = 100 - actor.x;
+      actor.anchorX = 100 - actor.anchorX;
+      actor.targetX = 100 - actor.targetX;
+      actor.heading = actor.heading === 0 ? Math.PI : 0;
+    }
+    ball.x = 100 - ball.x;
+    if (!ball.action && ball.ownerActorId) {
+      ballController.control(ball.ownerActorId);
+    }
+    phaseElapsed = 0;
+    attackingPhase = "BUILDUP";
+    return true;
+  }
+
+  function reshapeForRedCard(team, preferredActorId = null) {
+    const side = team === "away" ? "away" : "home";
+    let removed = preferredActorId ? removeActor(preferredActorId) : null;
+
+    if (!removed) {
+      const fallback = actors
+        .filter((actor) => actor.team === side && actor.role !== "GK")
+        .sort(
+          (a, b) => Math.abs(b.anchorX - 50) - Math.abs(a.anchorX - 50),
+        )[0];
+      if (fallback) removed = removeActor(fallback.actorId);
+    }
+
+    const outfield = actors
+      .filter((actor) => actor.team === side && actor.role !== "GK")
+      .sort((a, b) => a.anchorX - b.anchorX || a.anchorY - b.anchorY);
+
+    outfield.forEach((actor, index) => {
+      const point = TEN_MAN_SHAPES.compact[Math.min(index, 8)];
+      const x = teams[side].direction > 0 ? point[0] : 100 - point[0];
+      actor.anchorX = x;
+      actor.anchorY = point[1];
+      actor.targetX = x;
+      actor.targetY = point[1];
+      actor.tacticalIntent = "tenManShape";
+    });
+
+    teams[side].redCard = true;
+    return removed;
+  }
+
+  function prepareSetPiece(kind, visual = {}) {
+    const side =
+      visual.side === "away" ? "away"
+      : visual.side === "home" ? "home"
+      : possessionTeam;
+
+    attackingPhase = "SET_PIECE";
+    phaseElapsed = 0;
+    possessionTeam = side;
+
+    const direction = teams[side].direction;
+    const outfield = actors.filter(
+      (actor) => actor.team === side && actor.role !== "GK",
+    );
+    const kicker = outfield.find(
+      (actor) => ATTACK_ROLES.has(actor.role) || WIDE_ROLES.has(actor.role),
+    ) || outfield[0] || null;
+
+    if (!kicker) return 0;
+
+    let x = Number(visual.ball_start?.[0] ?? (direction > 0 ? 62 : 38));
+    let y = Number(visual.ball_start?.[1] ?? 50);
+
+    if (kind === "penalty") {
+      x = direction > 0 ? 88 : 12;
+      y = 50;
+    } else if (kind === "corner") {
+      x = direction > 0 ? 97 : 3;
+      y = y < 50 ? 7 : 93;
+    } else if (kind === "throw_in") {
+      y = y < 50 ? 5 : 95;
+    }
+
+    kicker.x = x - (kind === "penalty" ? direction * 2.4 : 0);
+    kicker.y = y;
+    kicker.vx = 0;
+    kicker.vy = 0;
+    ball.x = x;
+    ball.y = y;
+    ball.height = 0;
+    ballController.control(kicker.actorId);
+
+    eventClock = 0;
+
+    if (kind === "penalty") {
+      eventOverrideUntil = .55;
+      animationController.play(kicker.actorId, "SHOOT", {
+        duration: .38,
+        priority: 8,
+      });
+      return .45;
+    }
+
+    const receivers = outfield
+      .filter((actor) => actor.actorId !== kicker.actorId)
+      .sort((a, b) => {
+        const attackA = ATTACK_ROLES.has(a.role) ? 0 : 1;
+        const attackB = ATTACK_ROLES.has(b.role) ? 0 : 1;
+        const goalX = direction > 0 ? 94 : 6;
+        return (
+          attackA - attackB
+          || Math.abs(a.x - goalX) - Math.abs(b.x - goalX)
+          || a.actorId.localeCompare(b.actorId)
+        );
+      });
+
+    const receiver = receivers[0] || null;
+    if (!receiver) return .3;
+
+    if (kind === "corner") {
+      const boxX = direction > 0 ? 88 : 12;
+      const boxY = y < 50 ? 42 : 58;
+      receiver.x = boxX;
+      receiver.y = boxY;
+      receiver.vx = 0;
+      receiver.vy = 0;
+
+      const support = receivers.slice(1, 3);
+      support.forEach((actor, index) => {
+        actor.x = boxX - direction * (3 + index * 2);
+        actor.y = index === 0 ? 50 : (y < 50 ? 62 : 38);
+        actor.vx = 0;
+        actor.vy = 0;
+      });
+
+      animationController.play(kicker.actorId, "CROSS", {
+        duration: .42,
+        priority: 8,
+      });
+      animationController.play(receiver.actorId, "RECEIVE", {
+        duration: .74,
+        priority: 6,
+      });
+      ballController.cross(
+        {x, y},
+        {x: receiver.x, y: receiver.y},
+        {
+          targetActorId: receiver.actorId,
+          duration: .68,
+          maxHeight: 3.8,
+        },
+      );
+      eventOverrideUntil = .78;
+      return .68;
+    }
+
+    if (kind === "throw_in") {
+      receiver.x = clamp(x + direction * 8, 8, 92);
+      receiver.y = clamp(y + (y < 50 ? 8 : -8), 8, 92);
+      animationController.play(receiver.actorId, "RECEIVE", {
+        duration: .52,
+        priority: 5,
+      });
+      ballController.pass(
+        {x, y},
+        {x: receiver.x, y: receiver.y},
+        {
+          targetActorId: receiver.actorId,
+          duration: .48,
+          maxHeight: 1.1,
+        },
+      );
+      eventOverrideUntil = .58;
+      return .48;
+    }
+
+    if (kind === "free_kick") {
+      const targetX = clamp(x + direction * 18, 8, 92);
+      const targetY = clamp(50 + (receiver.y - 50) * .45, 12, 88);
+      receiver.x = targetX;
+      receiver.y = targetY;
+      animationController.play(kicker.actorId, "LONG_PASS", {
+        duration: .44,
+        priority: 7,
+      });
+      animationController.play(receiver.actorId, "RECEIVE", {
+        duration: .68,
+        priority: 5,
+      });
+      ballController.longBall(
+        {x, y},
+        {x: targetX, y: targetY},
+        {
+          targetActorId: receiver.actorId,
+          duration: .64,
+          maxHeight: 3.2,
+        },
+      );
+      eventOverrideUntil = .74;
+      return .64;
+    }
+
+    animationController.play(kicker.actorId, "PASS", {
+      duration: .32,
+      priority: 5,
+    });
+    animationController.play(receiver.actorId, "RECEIVE", {
+      duration: .48,
+      priority: 5,
+    });
+    ballController.pass(
+      {x, y},
+      {x: receiver.x, y: receiver.y},
+      {
+        targetActorId: receiver.actorId,
+        duration: .44,
+      },
+    );
+    eventOverrideUntil = .54;
+    return .44;
   }
 
   function beginAuthoritativeEvent(
@@ -829,6 +1123,11 @@ export function createTacticalEngine(plan) {
 
   return {
     update,
+    removeActor,
+    activateActor,
+    switchEnds,
+    reshapeForRedCard,
+    prepareSetPiece,
     beginAuthoritativeEvent,
     playKeeperAction,
     getState() {

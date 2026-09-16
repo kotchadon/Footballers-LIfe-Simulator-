@@ -12,6 +12,49 @@ export function createMatchEngine({
   let animationElapsed = 0;
   let hiddenPause = false;
 
+
+  let halftimeHandled = false;
+
+  function handleHalftime() {
+    if (halftimeHandled) return false;
+    halftimeHandled = true;
+    tactical.switchEnds();
+    animationElapsed = 0;
+    lastTimestamp = performance.now();
+    return true;
+  }
+
+  function handleSubstitution(event) {
+    const visual = event?.visual || {};
+    const kind = String(visual.kind || event?.kind || "").toLowerCase();
+    if (kind === "substitution_on") return tactical.activateActor(visual.actor || null);
+    if (kind === "substitution_off") return tactical.removeActor(visual.actor_id || null);
+    return null;
+  }
+
+  function handleCard(event) {
+    const visual = event?.visual || {};
+    const kind = String(visual.kind || event?.kind || "").toLowerCase();
+    if (kind !== "red_card") return null;
+    return tactical.reshapeForRedCard(visual.side, visual.actor_id || null);
+  }
+
+  function handlePenalty(event) {
+    return tactical.prepareSetPiece("penalty", event?.visual || {});
+  }
+
+  function handleCorner(event) {
+    return tactical.prepareSetPiece("corner", event?.visual || {});
+  }
+
+  function handleThrowIn(event) {
+    return tactical.prepareSetPiece("throw_in", event?.visual || {});
+  }
+
+  function handleFreeKick(event) {
+    return tactical.prepareSetPiece("free_kick", event?.visual || {});
+  }
+
   function setSpeed(multiplier) {
     const next = Number(multiplier);
     speed = [1, 2, 4].includes(next) ? next : 1;
@@ -90,6 +133,13 @@ export function createMatchEngine({
     pause,
     resume,
     setSpeed,
+    handleHalftime,
+    handleSubstitution,
+    handleCard,
+    handlePenalty,
+    handleCorner,
+    handleThrowIn,
+    handleFreeKick,
     isPaused: () => paused,
     getSpeed: () => speed,
   };

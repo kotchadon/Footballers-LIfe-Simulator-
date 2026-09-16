@@ -40,10 +40,15 @@ export function createAnimationController() {
     active.delete(actorId);
   }
 
+  function cancelActor(actorId) {
+    active.delete(actorId);
+  }
+
   return {
     play,
     getState,
     update,
     clear,
+    cancelActor,
   };
 }

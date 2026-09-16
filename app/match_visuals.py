@@ -133,14 +133,16 @@ def build_visual_plan(snapshot: dict[str, Any], seed: int) -> dict[str, Any]:
     home_formation = _formation_for(seed, "home", home_strength, home_required_role)
     away_formation = _formation_for(seed, "away", away_strength, away_required_role)
 
-    user_actor = {
+    user_actor = normalize_match_actor({
         "actor_id": "career_player",
         "persistent_player_id": career.get("id"),
         "display_name": str(career.get("player_name") or "Career Player"),
         "shirt_number": 17,
         "role": career_role,
+        "team": user_team,
         "attributes": _career_attributes(snapshot),
-    }
+        "visual_profile": {"is_user": True, "kit_slot": user_team},
+    })
 
     home_user = user_actor if user_team == "home" and selection_status == "starter" else None
     away_user = user_actor if user_team == "away" and selection_status == "starter" else None
@@ -170,10 +172,18 @@ def build_visual_plan(snapshot: dict[str, Any], seed: int) -> dict[str, Any]:
         "career_player": {
             "actor_id": "career_player",
             "selection_status": selection_status,
+            "state": (
+                "starting" if selection_status == "starter"
+                else "bench" if selection_status in {"substitute", "bench"}
+                else "not_selected"
+            ),
+            "active_from_minute": 0 if selection_status == "starter" else None,
+            "active_until_minute": None,
             "team": user_team,
             "display_name": str(career.get("player_name") or "Career Player"),
-            "role": str(career.get("position") or "CM").upper(),
+            "role": career_role,
             "attributes": _career_attributes(snapshot),
+            "actor": user_actor,
         },
         "initial_ball": {"x": 50.0, "y": 50.0, "height": 0.0, "owner_actor_id": None, "state": "LOOSE"},
         "camera": {"mode": "broadcast_side", "keep_full_pitch_visible": True, "perspective": 0.18},
@@ -184,9 +194,16 @@ _VISUAL_EVENT_KIND_MAP = {
     "goal_against": "goal",
     "player_shot_saved": "save",
     "player_shot_off_target": "miss",
+    "player_on": "substitution_on",
+    "player_off": "substitution_off",
     "yellow_card": "yellow_card",
     "red_card": "red_card",
     "injury": "injury",
+    "set_piece": "set_piece",
+    "corner": "corner",
+    "penalty": "penalty",
+    "throw_in": "throw_in",
+    "free_kick": "free_kick",
     "full_time": "full_time",
 }
 
@@ -255,6 +272,9 @@ def _event_actor_id(
     if source_kind.startswith("player_"):
         return "career_player"
 
+    if source_kind in {"player_on", "player_off", "yellow_card", "red_card", "injury"}:
+        return "career_player"
+
     if (
         source_kind == "goal_for"
         and metadata.get("contribution") == "goal"
@@ -263,6 +283,39 @@ def _event_actor_id(
 
     return None
 
+
+
+def _career_event_actor(snapshot: dict[str, Any]) -> dict[str, Any]:
+    fixture = dict(snapshot.get("fixture") or {})
+    career = dict(snapshot.get("career") or {})
+    team = "home" if bool(fixture.get("player_team_is_home")) else "away"
+    return normalize_match_actor({
+        "actor_id": "career_player",
+        "persistent_player_id": career.get("id"),
+        "display_name": str(career.get("player_name") or "Career Player"),
+        "shirt_number": 17,
+        "role": str(career.get("position") or "CM").upper(),
+        "team": team,
+        "attributes": _career_attributes(snapshot),
+        "visual_profile": {"is_user": True, "kit_slot": team},
+    })
+
+
+def _revealed_set_piece_type(event: dict[str, Any], kind: str) -> str | None:
+    if kind in {"corner", "penalty", "throw_in", "free_kick"}:
+        return kind
+    if kind != "set_piece":
+        return None
+    text = str(event.get("text") or "").lower()
+    if "corner" in text:
+        return "corner"
+    if "penalty" in text:
+        return "penalty"
+    if "throw" in text:
+        return "throw_in"
+    if "free kick" in text or "free-kick" in text:
+        return "free_kick"
+    return "restart"
 
 def visual_event_metadata(
     snapshot: dict[str, Any],
@@ -370,5 +423,12 @@ def visual_event_metadata(
         metadata["keeper_outcome"] = "save"
     elif kind == "miss":
         metadata["keeper_outcome"] = "miss"
+
+    set_piece_type = _revealed_set_piece_type(event, kind)
+    if set_piece_type is not None:
+        metadata["set_piece_type"] = set_piece_type
+
+    if kind == "substitution_on":
+        metadata["actor"] = _career_event_actor(snapshot)
 
     return metadata
