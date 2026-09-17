@@ -1,6 +1,9 @@
+export const REAL_SECONDS_PER_MATCH_MINUTE = 2;
+
 export function createMatchEngine({
   tactical,
   renderer,
+  camera = null,
   getMatchContext = () => ({}),
   onStatus = () => {},
 }) {
@@ -11,6 +14,8 @@ export function createMatchEngine({
   let lastTimestamp = 0;
   let animationElapsed = 0;
   let hiddenPause = false;
+  let visualEnabled = true;
+  let visualMinute = 0;
 
 
   let halftimeHandled = false;
@@ -83,15 +88,31 @@ export function createMatchEngine({
     if (!paused) {
       const dt = Math.min(.04, Math.max(0, rawDt)) * speed;
       animationElapsed += dt;
+      visualMinute = Math.min(
+        90,
+        animationElapsed / REAL_SECONDS_PER_MATCH_MINUTE,
+      );
 
-      const context = getMatchContext();
+      const context = {
+        ...getMatchContext(),
+        visualMinute,
+      };
       const state = tactical.update(dt, context);
+      const cameraState = camera?.update?.(dt, state) || null;
 
-      renderer.render({
-        actors: state.actors,
-        ball: state.ball,
-        animationPhase: (animationElapsed * .72) % 1,
-      });
+      if (visualEnabled) {
+        try {
+          renderer.render({
+            actors: state.actors,
+            ball: state.ball,
+            camera: cameraState,
+            animationPhase: (animationElapsed * .72) % 1,
+          });
+        } catch (error) {
+          visualEnabled = false;
+          console.error("Match visual renderer disabled:", error);
+        }
+      }
 
       onStatus({
         phase: state.phase,
@@ -102,6 +123,16 @@ export function createMatchEngine({
     }
 
     frameId = requestAnimationFrame(tick);
+  }
+
+  function emphasizeEvent(kind, payload = {}) {
+    camera?.emphasize?.(kind, payload);
+  }
+
+  function skipToNextMajorEvent() {
+    window.dispatchEvent(
+      new CustomEvent("footy:skip-next-major-event"),
+    );
   }
 
   function start() {
@@ -133,6 +164,8 @@ export function createMatchEngine({
     pause,
     resume,
     setSpeed,
+    emphasizeEvent,
+    skipToNextMajorEvent,
     handleHalftime,
     handleSubstitution,
     handleCard,

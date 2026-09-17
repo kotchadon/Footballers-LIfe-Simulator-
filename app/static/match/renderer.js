@@ -11,7 +11,13 @@ export function broadcastProjection(width, height) {
   };
 }
 
-export function createRenderer({canvas, stage, reducedMotion = false, onError = () => {}}) {
+export function createRenderer({
+  canvas,
+  stage,
+  pitch = null,
+  reducedMotion = false,
+  onError = () => {},
+}) {
   const ctx = canvas.getContext("2d", {alpha: true});
   let width = 1;
   let height = 1;
@@ -28,6 +34,21 @@ export function createRenderer({canvas, stage, reducedMotion = false, onError = 
     canvas.style.width = `${width}px`;
     canvas.style.height = `${height}px`;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+
+  function applyCameraTransform(camera = {}) {
+    const panX = Number(camera.panX || 0) + Number(camera.shakeX || 0);
+    const panY = Number(camera.panY || 0) + Number(camera.shakeY || 0);
+    const zoom = Math.max(.94, Math.min(1, Number(camera.zoom || 1)));
+    const transform = `translate3d(${panX}%, ${panY}%, 0) scale(${zoom})`;
+
+    canvas.style.transformOrigin = "50% 50%";
+    canvas.style.transform = transform;
+
+    if (pitch) {
+      pitch.style.transformOrigin = "50% 50%";
+      pitch.style.transform = transform;
+    }
   }
 
   function drawBall(ball, projection) {
@@ -52,6 +73,7 @@ export function createRenderer({canvas, stage, reducedMotion = false, onError = 
   function render(state) {
     if (destroyed || !ctx) return;
     try {
+      applyCameraTransform(state.camera || {});
       ctx.clearRect(0, 0, width, height);
       const projection = broadcastProjection(width, height);
       const actors = [...(state.actors || [])].sort((a, b) => Number(a.y) - Number(b.y));
@@ -65,6 +87,7 @@ export function createRenderer({canvas, stage, reducedMotion = false, onError = 
       drawBall(state.ball, projection);
     } catch (error) {
       onError(error);
+      throw error;
     }
   }
 

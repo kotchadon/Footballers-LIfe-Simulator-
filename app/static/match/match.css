@@ -123,3 +123,30 @@ body[data-page="match"] .stadium-scoreboard { margin-bottom: 0; }
   letter-spacing:.08em;
   text-transform:uppercase
 }
+
+.match-pitch-svg,
+.match-canvas {
+  will-change: transform;
+  transform-origin: 50% 50%;
+}
+
+.skip-next-event {
+  min-width: 168px;
+}
+
+.skip-next-event kbd {
+  opacity: .72;
+}
+
+@media (max-width: 760px) {
+  .skip-next-event {
+    min-width: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .match-pitch-svg,
+  .match-canvas {
+    transition: none !important;
+  }
+}

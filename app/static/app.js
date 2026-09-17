@@ -443,6 +443,7 @@
     const scoreCaption = document.getElementById("score-caption");
     const pauseButton = document.getElementById("pause-replay");
     const finishButton = document.getElementById("finish-replay");
+    const nextEventButton = document.getElementById("skip-next-event");
     const reportLock = document.getElementById("report-lock");
     const reportMount = document.getElementById("post-match-mount");
     const playerTeamHome = stage.dataset.playerTeamHome === "true";
@@ -461,9 +462,17 @@
     let timer = null;
     let finalising = false;
     let reportShown = false;
+    let skipInProgress = false;
+    const REAL_SECONDS_PER_MATCH_MINUTE = 2;
+    const BASE_MATCH_DURATION_MS = 90 * REAL_SECONDS_PER_MATCH_MINUTE * 1000;
+
 
     function interval() {
-      return Math.max(170, 920 / speed);
+      const eventSlots = Math.max(1, totalEvents);
+      return Math.max(
+        260,
+        BASE_MATCH_DURATION_MS / eventSlots / speed,
+      );
     }
 
     function updateSpeedButtons() {
@@ -699,6 +708,7 @@ if (timeline.querySelector(`[data-sequence="${item.sequence}"]`)) return;
       pauseButton.textContent = "Replay complete";
       pauseButton.disabled = true;
       finishButton.disabled = true;
+      if (nextEventButton) nextEventButton.disabled = true;
       finalising = false;
     }
 
@@ -749,6 +759,127 @@ if (timeline.querySelector(`[data-sequence="${item.sequence}"]`)) return;
         showToast(error.message || "Replay request failed.", true);
       }
     }
+
+    const MAJOR_EVENT_KINDS = new Set([
+      "goal_for",
+      "goal_against",
+      "player_shot_saved",
+      "player_shot_off_target",
+      "yellow_card",
+      "red_card",
+      "injury",
+      "player_on",
+      "player_off",
+      "set_piece",
+      "corner",
+      "penalty",
+      "free_kick",
+      "full_time",
+    ]);
+
+    function isMajorEvent(item) {
+      if (!item) return false;
+      const sourceKind = String(
+        item.visual?.source_kind || item.kind || "",
+      ).toLowerCase();
+      const visualKind = String(
+        item.visual?.kind || "",
+      ).toLowerCase();
+
+      return (
+        MAJOR_EVENT_KINDS.has(sourceKind)
+        || ["goal", "save", "miss"].includes(visualKind)
+      );
+    }
+
+    async function skipToNextMajorEvent() {
+      if (finalising || reportShown || skipInProgress) return;
+
+      skipInProgress = true;
+      window.clearTimeout(timer);
+
+      if (nextEventButton) nextEventButton.disabled = true;
+      status.textContent = "Skipping to next major event";
+
+      try {
+        for (let guard = 0; guard < 64; guard += 1) {
+          const payload = await postJson(advanceEndpoint, {cursor});
+
+          if (payload.completed) {
+            await finalise(false);
+            return;
+          }
+
+          const major = isMajorEvent(payload.event);
+          await addEvent(payload.event, !major);
+          cursor = payload.cursor;
+
+          if (
+            payload.event?.kind === "full_time"
+            || !payload.has_more
+          ) {
+            await finalise(false);
+            return;
+          }
+
+          if (major) break;
+        }
+
+        status.textContent = paused ? "Paused" : "Playing";
+
+        if (!paused && !reportShown && !finalising) {
+          timer = window.setTimeout(tick, interval());
+        }
+      } catch (error) {
+        paused = true;
+        status.textContent = "Replay paused · connection error";
+        showToast(
+          error.message || "Could not skip to next event.",
+          true,
+        );
+      } finally {
+        skipInProgress = false;
+        if (nextEventButton && !reportShown) {
+          nextEventButton.disabled = false;
+        }
+      }
+    }
+
+    if (nextEventButton) {
+      nextEventButton.addEventListener(
+        "click",
+        skipToNextMajorEvent,
+      );
+    }
+
+    function handleNextEventShortcut(event) {
+      if (
+        event.defaultPrevented
+        || event.repeat
+        || event.metaKey
+        || event.ctrlKey
+        || event.altKey
+      ) return;
+
+      const target = event.target;
+      if (
+        target instanceof HTMLElement
+        && (
+          target.isContentEditable
+          || target.matches("input, textarea, select")
+        )
+      ) return;
+
+      if (event.key.toLowerCase() !== "n") return;
+
+      event.preventDefault();
+      skipToNextMajorEvent();
+    }
+
+    document.addEventListener(
+      "keydown",
+      handleNextEventShortcut,
+    );
 
     function togglePause() {
       if (finalising || reportShown) return;

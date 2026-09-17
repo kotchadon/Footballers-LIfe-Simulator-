@@ -172,3 +172,122 @@ def test_template_has_transition_overlay_and_plan_has_no_rating():
         "_VISUAL_EVENT_KIND_MAP", 1
     )[0]
     assert '"rating"' not in build
+
+def test_broadcast_camera_module_contract_exists():
+    camera = Path("app/static/match/camera.js")
+    assert camera.exists()
+    text = camera.read_text()
+    assert "export function createCameraController" in text
+    assert "function update(" in text
+    assert "function emphasize(" in text
+    assert "reducedMotion" in text
+    assert "Math.random(" not in text
+
+
+def test_broadcast_camera_keeps_full_pitch_bias_bounded():
+    text = Path("app/static/match/camera.js").read_text()
+    assert "MIN_ZOOM = .955" in text
+    assert "MAX_ZOOM = .995" in text
+    assert "MAX_PAN_PERCENT = 1.6" in text
+    assert "clamp(" in text
+
+
+def test_match_renderer_applies_same_camera_transform_to_pitch_and_canvas():
+    text = Path("app/static/match/renderer.js").read_text()
+    assert "pitch = null" in text
+    assert "function applyCameraTransform(" in text
+    assert "canvas.style.transform = transform" in text
+    assert "pitch.style.transform = transform" in text
+    assert "state.camera || {}" in text
+
+
+def test_match_engine_uses_three_minute_clock_mapping_and_valid_speeds():
+    text = Path("app/static/match/match-engine.js").read_text()
+    assert "REAL_SECONDS_PER_MATCH_MINUTE = 2" in text
+    assert "[1, 2, 4].includes(next)" in text
+    assert "visualMinute" in text
+
+
+def test_renderer_failure_is_isolated_inside_match_engine():
+    text = Path("app/static/match/match-engine.js").read_text()
+    assert "let visualEnabled = true" in text
+    assert "renderer.render(" in text
+    assert "visualEnabled = false" in text
+    assert 'console.error("Match visual renderer disabled:", error)' in text
+
+
+def test_camera_is_wired_into_live_event_emphasis():
+    text = Path("app/static/match/bootstrap.js").read_text()
+    assert 'from "./camera.js"' in text
+    assert "createCameraController" in text
+    assert "pitch," in text
+    assert "camera," in text
+    assert "engine.emphasizeEvent" in text
+
+
+def test_template_keeps_1_2_4_and_adds_next_event_control():
+    html = Path("app/templates/match.html").read_text()
+    for speed in ("1", "2", "4"):
+        assert f'data-match-speed="{speed}"' in html
+    assert 'data-match-speed="3"' not in html
+    assert 'id="skip-next-event"' in html
+    assert 'id="finish-replay"' in html
+    assert "Enter" in html
+
+
+def test_replay_pacing_targets_three_minute_match_without_future_metadata():
+    text = Path("app/static/app.js").read_text()
+    assert "REAL_SECONDS_PER_MATCH_MINUTE = 2" in text
+    assert "BASE_MATCH_DURATION_MS" in text
+    assert "totalEvents" in text
+    assert "next_minute" not in text
+    assert "future_events" not in text
+
+
+def test_skip_to_next_major_event_reveals_sequentially_through_existing_endpoint():
+    text = Path("app/static/app.js").read_text()
+    assert "async function skipToNextMajorEvent(" in text
+    assert "function isMajorEvent(" in text
+    assert "postJson(advanceEndpoint, {cursor})" in text
+    assert "await addEvent(payload.event, !major)" in text
+    section = text.split("async function skipToNextMajorEvent", 1)[1].split(
+        "function togglePause", 1
+    )[0]
+    assert "remaining_events" not in section
+
+
+def test_full_time_completion_path_remains_existing_authoritative_path():
+    text = Path("app/static/app.js").read_text()
+    assert "postJson(completeEndpoint, {skip})" in text
+    assert "await addEvent(events[index], skip);" in text
+
+
+def test_hidden_tab_pause_and_resume_still_prevent_delta_spike():
+    text = Path("app/static/match/match-engine.js").read_text()
+    assert 'document.addEventListener("visibilitychange", onVisibilityChange)' in text
+    assert 'pause("hidden")' in text
+    assert 'resume("hidden")' in text
+    assert "lastTimestamp = performance.now()" in text
+
+
+def test_camera_css_has_gpu_transform_and_reduced_motion_guard():
+    css = Path("app/static/match/match.css").read_text()
+    assert "will-change: transform" in css
+    assert ".skip-next-event" in css
+    assert "@media (prefers-reduced-motion: reduce)" in css
+
+def test_next_major_event_n_keyboard_shortcut_is_bound_safely():
+    text = Path("app/static/app.js").read_text()
+    assert "function handleNextEventShortcut(event)" in text
+    assert 'event.key.toLowerCase() !== "n"' in text
+    assert "event.repeat" in text
+    assert "event.metaKey" in text
+    assert "event.ctrlKey" in text
+    assert "event.altKey" in text
+    assert "target.isContentEditable" in text
+    assert 'target.matches("input, textarea, select")' in text
+    assert "event.preventDefault()" in text
+    assert "skipToNextMajorEvent()" in text
+    assert 'document.addEventListener(' in text
+    assert '"keydown"' in text
+    assert "handleNextEventShortcut" in text

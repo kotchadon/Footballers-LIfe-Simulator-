@@ -1,11 +1,13 @@
 import {createRenderer} from "./renderer.js";
 import {createTacticalEngine} from "./tactical-engine.js";
 import {createMatchEngine} from "./match-engine.js";
+import {createCameraController} from "./camera.js";
 import {createEventChoreography} from "./event-choreography.js";
 
 const root = document.getElementById("match-stage");
 const stage = document.getElementById("match-visual-stage");
 const canvas = document.getElementById("match-canvas");
+const pitch = document.getElementById("match-pitch-svg");
 const visualStatus = document.getElementById("match-visual-status");
 const fallback = document.getElementById("match-visual-fallback");
 const matchTransitionOverlay = document.getElementById("match-transition-overlay");
@@ -38,11 +40,13 @@ async function boot() {
 
   const plan = payload.visual;
   const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const camera = createCameraController({reducedMotion});
   let visualEnabled = true;
 
   const renderer = createRenderer({
     canvas,
     stage,
+    pitch,
     reducedMotion,
     onError(error) {
       visualEnabled = false;
@@ -55,6 +59,7 @@ async function boot() {
 
   const engine = createMatchEngine({
     tactical,
+    camera,
     renderer: {
       render(state) {
         if (visualEnabled) renderer.render(state);
@@ -95,6 +100,10 @@ async function boot() {
   window.FootyMatchVisuals = {
     async playEvent(item) {
       if (!item?.visual) return;
+      engine.emphasizeEvent?.(
+        item.visual.kind || item.kind,
+        item.visual,
+      );
       await choreography.playEvent(item);
     },
   };
