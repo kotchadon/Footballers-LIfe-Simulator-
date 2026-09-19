@@ -367,3 +367,19 @@ def test_slice7_reduced_motion_keeps_camera_shake_disabled_and_event_motion_opti
     assert ".live-player-focus.is-live-event" in css
     reduced = css.split("@media (prefers-reduced-motion: reduce)", 1)[1]
     assert "animation: none" in reduced or "animation:none" in reduced
+
+
+def test_final_review_replay_speed_contract_is_1_2_4_end_to_end():
+    text = Path("app/static/app.js").read_text()
+    start = text.index("function setupMatchReplay()")
+    end = text.index("initialiseVisualUI(document)", start)
+    replay = text[start:end]
+
+    assert "const next = Number(nextSpeed)" in replay
+    assert "speed = [1, 2, 4].includes(next) ? next : 1" in replay
+    assert "Math.min(3" not in replay
+    assert 'speed === 4 ? "auto" : "smooth"' in replay
+    assert 'speed === 3 ? "auto" : "smooth"' not in replay
+
+    assert 'if (["1", "2", "4"].includes(key)) {' in text
+    assert 'if (["1", "2", "3"].includes(key)) {' not in text

@@ -664,7 +664,7 @@ if (timeline.querySelector(`[data-sequence="${item.sequence}"]`)) return;
       row.append(stamp, copy);
       if (instant) row.style.animationDuration = "0s";
       timeline.append(row);
-      timeline.scrollTo({top: timeline.scrollHeight, behavior: instant || speed === 3 ? "auto" : "smooth"});
+      timeline.scrollTo({top: timeline.scrollHeight, behavior: instant || speed === 4 ? "auto" : "smooth"});
 
       const mapped = mapScore(item.score);
       homeScore.textContent = mapped.home;
@@ -868,7 +868,7 @@ if (timeline.querySelector(`[data-sequence="${item.sequence}"]`)) return;
       reportLock.remove();
       reportMount.replaceChildren(buildReport(payload));
       initialiseVisualUI(reportMount);
-      reportMount.scrollIntoView({behavior: speed === 3 ? "auto" : "smooth", block: "start"});
+      reportMount.scrollIntoView({behavior: speed === 4 ? "auto" : "smooth", block: "start"});
       pauseButton.textContent = "Replay complete";
       pauseButton.disabled = true;
       finishButton.disabled = true;
@@ -1055,7 +1055,8 @@ if (timeline.querySelector(`[data-sequence="${item.sequence}"]`)) return;
     }
 
     function setSpeed(nextSpeed) {
-      speed = Math.max(1, Math.min(3, Number(nextSpeed)));
+      const next = Number(nextSpeed);
+      speed = [1, 2, 4].includes(next) ? next : 1;
       updateSpeedButtons();
       if (!paused && !finalising && !reportShown) {
         window.clearTimeout(timer);
@@ -1114,7 +1115,7 @@ if (timeline.querySelector(`[data-sequence="${item.sequence}"]`)) return;
         replay.togglePause();
         return;
       }
-      if (["1", "2", "3"].includes(key)) {
+      if (["1", "2", "4"].includes(key)) {
         event.preventDefault();
         replay.setSpeed(Number(key));
         return;

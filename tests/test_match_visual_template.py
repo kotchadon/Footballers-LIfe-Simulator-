@@ -470,3 +470,9 @@ def test_slice7_audio_controller_is_local_synthesis_only():
     assert "http://" not in lowered
     assert "https://" not in lowered
     assert "new audio(" not in lowered
+
+
+def test_final_review_shortcut_help_matches_1_2_4_replay_contract():
+    text = Path("app/templates/base.html").read_text()
+    assert "<kbd>1/2/4</kbd><span>Replay speed</span>" in text
+    assert "<kbd>1–3</kbd><span>Replay speed</span>" not in text
