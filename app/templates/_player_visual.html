@@ -1,0 +1,95 @@
+{% from "player_portrait_v5/_parts.html" import kit, neck, head, brows, eyes, nose, mouth, facial_hair, hair %}
+
+{% macro player_visual(visual, size='hero', show_status=True) -%}
+<figure
+  class="player-visual player-visual--{{ size }} football-portrait-v5"
+  data-player-identity="{{ visual.identity_key }}"
+  data-energy="{{ visual.state.energy }}"
+  data-mood="{{ visual.state.mood }}"
+  data-selection="{{ visual.state.selection }}"
+  data-injury="{{ visual.state.injury }}"
+  data-expression="{{ visual.presentation.expression }}"
+>
+  <svg
+    class="player-visual__svg football-portrait-v5__svg"
+    viewBox="0 0 280 280"
+    role="img"
+    aria-label="{{ visual.a11y_label }}"
+    preserveAspectRatio="xMidYMid meet"
+  >
+    <defs>
+      <linearGradient id="fp5-skin-{{ visual.identity_key }}" x1=".12" y1=".06" x2=".86" y2=".94">
+        <stop offset="0" stop-color="{{ visual.appearance.skin }}"/>
+        <stop offset=".72" stop-color="{{ visual.appearance.skin }}"/>
+        <stop offset="1" stop-color="{{ visual.appearance.skin_shadow }}"/>
+      </linearGradient>
+      <linearGradient id="fp5-kit-{{ visual.identity_key }}" x1=".08" y1=".04" x2=".92" y2=".96">
+        <stop offset="0" stop-color="{{ visual.kit.primary }}"/>
+        <stop offset=".70" stop-color="{{ visual.kit.primary }}"/>
+        <stop offset="1" stop-color="{{ visual.kit.accent }}"/>
+      </linearGradient>
+      <radialGradient id="fp5-halo-{{ visual.identity_key }}" cx=".50" cy=".42" r=".60">
+        <stop offset="0" stop-color="{{ visual.kit.secondary }}" stop-opacity=".13"/>
+        <stop offset=".70" stop-color="{{ visual.kit.primary }}" stop-opacity=".05"/>
+        <stop offset="1" stop-color="{{ visual.kit.primary }}" stop-opacity="0"/>
+      </radialGradient>
+    </defs>
+
+    <g class="fp5-backdrop" aria-hidden="true">
+      <ellipse cx="140" cy="145" rx="112" ry="119" fill="url(#fp5-halo-{{ visual.identity_key }})"/>
+      <path d="M42 252 H238" stroke="#7e94b0" stroke-width="1" opacity=".08"/>
+    </g>
+
+    <g class="fp5-portrait" data-layer="portrait">
+      {{ kit(visual) }}
+      {{ neck(visual) }}
+      {{ head(visual) }}
+      {{ brows(visual) }}
+      {{ eyes(visual) }}
+      {{ nose(visual) }}
+      {{ mouth(visual) }}
+      {{ facial_hair(visual) }}
+      {{ hair(visual) }}
+
+      {% if visual.presentation.sweat_level > 0 %}
+      <g class="fp5-fatigue" data-layer="fatigue" fill="#a5d9ef">
+        <path d="M187 130 C190 136 190 140 187 142 C184 140 184 136 187 130 Z" opacity=".42"/>
+        {% if visual.presentation.sweat_level > 1 %}
+        <path d="M101 148 C104 154 104 158 101 160 C98 158 98 154 101 148 Z" opacity=".30"/>
+        {% endif %}
+      </g>
+      {% endif %}
+
+      {% if visual.presentation.treatment %}
+      <g class="fp5-treatment" data-layer="treatment">
+        <rect x="174" y="147" width="19" height="5.5" rx="2.75" transform="rotate(-11 174 147)" fill="#d8d0c1" opacity=".78"/>
+        <path d="M178 150 L190 147" stroke="#a79d8e" stroke-width="1" opacity=".48"/>
+      </g>
+      {% endif %}
+    </g>
+  </svg>
+
+  {% if show_status %}
+  <figcaption class="player-visual__caption">
+    <div class="player-visual__caption-main">
+      <span class="player-visual__position">{{ visual.position }}</span>
+      <strong>{{ visual.name }}</strong>
+      <small>{{ visual.club_name }}</small>
+    </div>
+    <div class="player-visual__overall" aria-label="{{ visual.overall }} overall">
+      <b>{{ visual.overall }}</b>
+      <span>OVR</span>
+    </div>
+    <div class="player-visual__state" aria-label="Player condition">
+      <span>{{ visual.state.energy|replace('_', ' ')|title }}</span>
+      <span>{{ visual.state.mood|replace('_', ' ')|title }}</span>
+      {% if visual.state.injury == 'injured' %}
+      <span>Injured {{ visual.state.injured_weeks }}w</span>
+      {% elif visual.state.selection != 'unspecified' %}
+      <span>{{ visual.state.selection|replace('_', ' ')|title }}</span>
+      {% endif %}
+    </div>
+  </figcaption>
+  {% endif %}
+</figure>
+{%- endmacro %}

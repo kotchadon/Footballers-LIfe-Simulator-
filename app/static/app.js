@@ -427,11 +427,6 @@
       setTrainingFocus(document.querySelector(`[data-training-focus="${mappings[key]}"]`));
       return true;
     }
-    if (key === "c") {
-      event.preventDefault();
-      submitContinue();
-      return true;
-    }
     return false;
   }
 
@@ -448,6 +443,14 @@
     const scoreCaption = document.getElementById("score-caption");
     const pauseButton = document.getElementById("pause-replay");
     const finishButton = document.getElementById("finish-replay");
+    const nextEventButton = document.getElementById("skip-next-event");
+    const livePlayerFocus = document.getElementById("player-briefing");
+    const livePlayerState = document.getElementById("live-player-state");
+    const livePlayerGoals = document.getElementById("live-player-goals");
+    const livePlayerAssists = document.getElementById("live-player-assists");
+    const livePlayerCards = document.getElementById("live-player-cards");
+    const homeRevealedShots = document.getElementById("home-revealed-shots");
+    const awayRevealedShots = document.getElementById("away-revealed-shots");
     const reportLock = document.getElementById("report-lock");
     const reportMount = document.getElementById("post-match-mount");
     const playerTeamHome = stage.dataset.playerTeamHome === "true";
@@ -460,39 +463,34 @@
     const goalFlash = document.getElementById("goal-flash");
     const pitch = document.getElementById("live-pitch");
 
-    function animatePitchEvent(item) {
-      if (!pitchBall || !pitch || !item) return;
-      const kind = String(item.kind || "moment");
-      const sequence = Number(item.sequence || 0);
-      const attackingHome = ((sequence + (playerTeamHome ? 0 : 1)) % 2) === 0;
-      const targets = {
-        goal: attackingHome ? [91,50] : [9,50],
-        shot: attackingHome ? [82,36 + (sequence%3)*14] : [18,36 + (sequence%3)*14],
-        save: attackingHome ? [88,44] : [12,56],
-        corner: attackingHome ? [96,8 + (sequence%2)*84] : [4,8 + (sequence%2)*84],
-        card: [48 + (sequence%2)*8, 44 + (sequence%3)*8],
-        injury: [42 + (sequence%4)*6, 35 + (sequence%3)*14],
-        substitution: [50,92],
-        full_time: [50,50],
-      };
-      const target = targets[kind] || [20 + ((sequence*19)%60), 18 + ((sequence*31)%64)];
-      pitchBall.style.setProperty("--ball-x", `${target[0]}%`);
-      pitchBall.style.setProperty("--ball-y", `${target[1]}%`);
-      pitchBall.classList.remove("kick"); void pitchBall.offsetWidth; pitchBall.classList.add("kick");
-      if (pitchLabel) { pitchLabel.textContent = item.text || kind.replace(/_/g," "); pitchLabel.dataset.kind = kind; }
-      pitch.dataset.eventKind = kind;
-      if (kind === "goal" && goalFlash) { goalFlash.classList.remove("show"); void goalFlash.offsetWidth; goalFlash.classList.add("show"); }
-    }
-
     let cursor = 0;
     let paused = false;
     let speed = 1;
     let timer = null;
     let finalising = false;
     let reportShown = false;
+    let skipInProgress = false;
+    const livePresentationSeen = new Set();
+    const livePlayerStats = {
+      goals: 0,
+      assists: 0,
+      yellow: 0,
+      red: 0,
+    };
+    const revealedShots = {
+      home: 0,
+      away: 0,
+    };
+    const REAL_SECONDS_PER_MATCH_MINUTE = 2;
+    const BASE_MATCH_DURATION_MS = 90 * REAL_SECONDS_PER_MATCH_MINUTE * 1000;
+
 
     function interval() {
-      return Math.max(170, 920 / speed);
+      const eventSlots = Math.max(1, totalEvents);
+      return Math.max(
+        260,
+        BASE_MATCH_DURATION_MS / eventSlots / speed,
+      );
     }
 
     function updateSpeedButtons() {
@@ -507,10 +505,155 @@
       return playerTeamHome ? {home: player, away: opponent} : {home: opponent, away: player};
     }
 
-    function addEvent(item, instant = false) {
+    function pulseLivePlayerFocus() {
+      if (!livePlayerFocus) return;
+
+      livePlayerFocus.classList.remove("is-live-event");
+      void livePlayerFocus.offsetWidth;
+      livePlayerFocus.classList.add("is-live-event");
+
+      window.setTimeout(() => {
+        livePlayerFocus.classList.remove("is-live-event");
+      }, 620);
+    }
+
+    function updateLivePresentation(item) {
       if (!item) return;
-      animatePitchEvent(item);
-      if (timeline.querySelector(`[data-sequence="${item.sequence}"]`)) return;
+
+      const key = String(
+        item.sequence
+        ?? `${item.minute || 0}:${item.kind || "moment"}:${item.text || ""}`,
+      );
+
+      if (livePresentationSeen.has(key)) return;
+      livePresentationSeen.add(key);
+
+      const visual = item?.visual || {};
+      const sourceKind = String(
+        visual.source_kind
+        || item.kind
+        || "",
+      ).toLowerCase();
+      const visualKind = String(
+        visual.kind
+        || "",
+      ).toLowerCase();
+      const contribution = String(
+        item?.metadata?.contribution
+        || "",
+      ).toLowerCase();
+      const careerEvent = (
+        visual.actor_id === "career_player"
+        || contribution === "goal"
+        || contribution === "assist"
+      );
+
+      let playerChanged = false;
+
+      if (
+        sourceKind === "goal_for"
+        && contribution === "goal"
+      ) {
+        livePlayerStats.goals += 1;
+        playerChanged = true;
+      }
+
+      if (
+        sourceKind === "goal_for"
+        && contribution === "assist"
+      ) {
+        livePlayerStats.assists += 1;
+        playerChanged = true;
+      }
+
+      if (
+        careerEvent
+        && visualKind === "yellow_card"
+      ) {
+        livePlayerStats.yellow += 1;
+        playerChanged = true;
+      }
+
+      if (
+        careerEvent
+        && visualKind === "red_card"
+      ) {
+        livePlayerStats.red += 1;
+        playerChanged = true;
+      }
+
+      if (
+        visual.actor_id === "career_player"
+        && visualKind === "substitution_on"
+        && livePlayerState
+      ) {
+        livePlayerState.textContent = "ON PITCH";
+        playerChanged = true;
+      }
+
+      if (
+        visual.actor_id === "career_player"
+        && visualKind === "substitution_off"
+        && livePlayerState
+      ) {
+        livePlayerState.textContent = "SUBBED OFF";
+        playerChanged = true;
+      }
+
+      if (livePlayerGoals) {
+        livePlayerGoals.textContent = String(
+          livePlayerStats.goals,
+        );
+      }
+
+      if (livePlayerAssists) {
+        livePlayerAssists.textContent = String(
+          livePlayerStats.assists,
+        );
+      }
+
+      if (livePlayerCards) {
+        livePlayerCards.textContent = (
+          `${livePlayerStats.yellow}Y / `
+          + `${livePlayerStats.red}R`
+        );
+      }
+
+      if (
+        ["goal", "save", "miss"].includes(visualKind)
+        && visual.side === "home"
+      ) {
+        revealedShots.home += 1;
+      }
+
+      if (
+        ["goal", "save", "miss"].includes(visualKind)
+        && visual.side === "away"
+      ) {
+        revealedShots.away += 1;
+      }
+
+      if (homeRevealedShots) {
+        homeRevealedShots.textContent = String(
+          revealedShots.home,
+        );
+      }
+
+      if (awayRevealedShots) {
+        awayRevealedShots.textContent = String(
+          revealedShots.away,
+        );
+      }
+
+      if (playerChanged) {
+        pulseLivePlayerFocus();
+      }
+    }
+
+    function addEventImmediate(item, instant = false) {
+      if (!item) return;
+      updateLivePresentation(item);
+if (timeline.querySelector(`[data-sequence="${item.sequence}"]`)) return;
       const row = document.createElement("article");
       row.className = `timeline-event ${item.kind || "moment"}`;
       row.dataset.sequence = String(item.sequence);
@@ -521,13 +664,63 @@
       row.append(stamp, copy);
       if (instant) row.style.animationDuration = "0s";
       timeline.append(row);
-      timeline.scrollTo({top: timeline.scrollHeight, behavior: instant || speed === 3 ? "auto" : "smooth"});
+      timeline.scrollTo({top: timeline.scrollHeight, behavior: instant || speed === 4 ? "auto" : "smooth"});
 
       const mapped = mapScore(item.score);
       homeScore.textContent = mapped.home;
       awayScore.textContent = mapped.away;
       minute.textContent = item.kind === "full_time" ? "FT" : `${String(item.minute).padStart(2, "0")}'`;
       eventCount.textContent = `${Math.min(cursor + 1, totalEvents)} / ${totalEvents}`;
+    }
+
+    async function addEvent(item, instant = false) {
+      if (!item) return;
+      if (
+        timeline.querySelector(
+          `[data-sequence="${item.sequence}"]`,
+        )
+      ) return;
+
+      if (instant || !item.visual) {
+        addEventImmediate(item, instant);
+        return;
+      }
+
+      const visualPlayer =
+        window.FootyMatchVisuals?.playEvent;
+
+      if (typeof visualPlayer !== "function") {
+        addEventImmediate(item, instant);
+        return;
+      }
+
+      const VISUAL_TIMEOUT_MS = 1600;
+      let timeoutId = null;
+
+      try {
+        const timeout = new Promise((resolve) => {
+          timeoutId = window.setTimeout(
+            resolve,
+            VISUAL_TIMEOUT_MS,
+          );
+        });
+
+        await Promise.race([
+          Promise.resolve(visualPlayer(item)),
+          timeout,
+        ]);
+      } catch (error) {
+        console.error(
+          "Match event visualization failed:",
+          error,
+        );
+      } finally {
+        if (timeoutId !== null) {
+          window.clearTimeout(timeoutId);
+        }
+      }
+
+      addEventImmediate(item, false);
     }
 
     async function postJson(endpoint, payload) {
@@ -675,10 +868,11 @@
       reportLock.remove();
       reportMount.replaceChildren(buildReport(payload));
       initialiseVisualUI(reportMount);
-      reportMount.scrollIntoView({behavior: speed === 3 ? "auto" : "smooth", block: "start"});
+      reportMount.scrollIntoView({behavior: speed === 4 ? "auto" : "smooth", block: "start"});
       pauseButton.textContent = "Replay complete";
       pauseButton.disabled = true;
       finishButton.disabled = true;
+      if (nextEventButton) nextEventButton.disabled = true;
       finalising = false;
     }
 
@@ -693,7 +887,7 @@
         const payload = await postJson(completeEndpoint, {skip});
         const events = payload.remaining_events || [];
         for (let index = cursor; index < events.length; index += 1) {
-          addEvent(events[index], skip);
+          await addEvent(events[index], skip);
           cursor = index + 1;
         }
         renderReport(payload);
@@ -715,7 +909,7 @@
           await finalise(false);
           return;
         }
-        addEvent(payload.event);
+        await addEvent(payload.event);
         cursor = payload.cursor;
         if (payload.event?.kind === "full_time" || !payload.has_more) {
           await finalise(false);
@@ -730,6 +924,127 @@
       }
     }
 
+    const MAJOR_EVENT_KINDS = new Set([
+      "goal_for",
+      "goal_against",
+      "player_shot_saved",
+      "player_shot_off_target",
+      "yellow_card",
+      "red_card",
+      "injury",
+      "player_on",
+      "player_off",
+      "set_piece",
+      "corner",
+      "penalty",
+      "free_kick",
+      "full_time",
+    ]);
+
+    function isMajorEvent(item) {
+      if (!item) return false;
+      const sourceKind = String(
+        item.visual?.source_kind || item.kind || "",
+      ).toLowerCase();
+      const visualKind = String(
+        item.visual?.kind || "",
+      ).toLowerCase();
+
+      return (
+        MAJOR_EVENT_KINDS.has(sourceKind)
+        || ["goal", "save", "miss"].includes(visualKind)
+      );
+    }
+
+    async function skipToNextMajorEvent() {
+      if (finalising || reportShown || skipInProgress) return;
+
+      skipInProgress = true;
+      window.clearTimeout(timer);
+
+      if (nextEventButton) nextEventButton.disabled = true;
+      status.textContent = "Skipping to next major event";
+
+      try {
+        for (let guard = 0; guard < 64; guard += 1) {
+          const payload = await postJson(advanceEndpoint, {cursor});
+
+          if (payload.completed) {
+            await finalise(false);
+            return;
+          }
+
+          const major = isMajorEvent(payload.event);
+          await addEvent(payload.event, !major);
+          cursor = payload.cursor;
+
+          if (
+            payload.event?.kind === "full_time"
+            || !payload.has_more
+          ) {
+            await finalise(false);
+            return;
+          }
+
+          if (major) break;
+        }
+
+        status.textContent = paused ? "Paused" : "Playing";
+
+        if (!paused && !reportShown && !finalising) {
+          timer = window.setTimeout(tick, interval());
+        }
+      } catch (error) {
+        paused = true;
+        status.textContent = "Replay paused · connection error";
+        showToast(
+          error.message || "Could not skip to next event.",
+          true,
+        );
+      } finally {
+        skipInProgress = false;
+        if (nextEventButton && !reportShown) {
+          nextEventButton.disabled = false;
+        }
+      }
+    }
+
+    if (nextEventButton) {
+      nextEventButton.addEventListener(
+        "click",
+        skipToNextMajorEvent,
+      );
+    }
+
+    function handleNextEventShortcut(event) {
+      if (
+        event.defaultPrevented
+        || event.repeat
+        || event.metaKey
+        || event.ctrlKey
+        || event.altKey
+      ) return;
+
+      const target = event.target;
+      if (
+        target instanceof HTMLElement
+        && (
+          target.isContentEditable
+          || target.matches("input, textarea, select")
+        )
+      ) return;
+
+      if (event.key.toLowerCase() !== "n") return;
+
+      event.preventDefault();
+      skipToNextMajorEvent();
+    }
+
+    document.addEventListener(
+      "keydown",
+      handleNextEventShortcut,
+    );
+
     function togglePause() {
       if (finalising || reportShown) return;
       paused = !paused;
@@ -740,7 +1055,8 @@
     }
 
     function setSpeed(nextSpeed) {
-      speed = Math.max(1, Math.min(3, Number(nextSpeed)));
+      const next = Number(nextSpeed);
+      speed = [1, 2, 4].includes(next) ? next : 1;
       updateSpeedButtons();
       if (!paused && !finalising && !reportShown) {
         window.clearTimeout(timer);
@@ -773,7 +1089,7 @@
   const replay = page === "match" ? setupMatchReplay() : null;
 
   document.addEventListener("keydown", (event) => {
-    if (event.metaKey || event.ctrlKey || event.altKey || isTypingTarget(event.target)) return;
+    if (event.metaKey || event.ctrlKey || event.altKey || event.repeat || isTypingTarget(event.target)) return;
     const key = event.key.toLowerCase();
 
     if (key === "?" || (key === "/" && event.shiftKey)) {
@@ -786,6 +1102,12 @@
       return;
     }
 
+    if (key === "c" && document.querySelector(".keyboard-continue")) {
+      event.preventDefault();
+      submitContinue();
+      return;
+    }
+
     if (page === "dashboard" && setupDashboardShortcuts(event)) return;
     if (page === "match" && replay) {
       if (event.code === "Space") {
@@ -793,7 +1115,7 @@
         replay.togglePause();
         return;
       }
-      if (["1", "2", "3"].includes(key)) {
+      if (["1", "2", "4"].includes(key)) {
         event.preventDefault();
         replay.setSpeed(Number(key));
         return;

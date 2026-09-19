@@ -8,6 +8,7 @@ import uuid
 from datetime import datetime, timezone
 
 from .db import get_db
+from .match_visuals import build_visual_plan, visual_event_metadata
 from .calendar_engine import generate_season_calendar, get_calendar, get_week_context
 from .economy import (
     accept_endorsement as economy_accept_endorsement,
@@ -16,6 +17,7 @@ from .economy import (
     decline_endorsement as economy_decline_endorsement,
     ensure_financial_profile,
     get_financial_dashboard as economy_get_financial_dashboard,
+    get_selected_player_programme as economy_get_selected_player_programme,
     place_virtual_wager as economy_place_virtual_wager,
     process_weekly_finances,
     sell_investment as economy_sell_investment,
@@ -634,7 +636,7 @@ def _build_match_snapshot(career, fixtures, seed):
     max_week = max(fixture["week"] for fixture in fixtures)
     # max_week above is current week only; actual season max is resolved during commit.
 
-    return {
+    snapshot = {
         "schema_version": 1,
         "seed": seed,
         "career": {
@@ -685,6 +687,8 @@ def _build_match_snapshot(career, fixtures, seed):
             "bonus": bonus,
         },
     }
+    snapshot["visual"] = build_visual_plan(snapshot, seed)
+    return snapshot
 
 
 def prepare_next_match(career_id, seed=None):
@@ -788,6 +792,22 @@ def prepare_next_match(career_id, seed=None):
     return db.execute("SELECT * FROM match_sessions WHERE public_id = ?", (public_id,)).fetchone()
 
 
+
+def get_match_visual_plan(public_id, career_id):
+    row = get_db().execute(
+        "SELECT seed, simulation_json FROM match_sessions WHERE public_id = ? AND career_id = ?",
+        (public_id, career_id),
+    ).fetchone()
+    if row is None:
+        return None
+    snapshot = json.loads(row["simulation_json"])
+    plan = snapshot.get("visual")
+    if not isinstance(plan, dict):
+        plan = build_visual_plan(snapshot, int(row["seed"]))
+    return plan
+
+
+
 def get_match_session_view(public_id, career_id):
     row = get_db().execute(
         "SELECT * FROM match_sessions WHERE public_id = ? AND career_id = ?",
@@ -845,7 +865,16 @@ def advance_match_session(public_id, career_id, cursor):
             (revealed + 1, row["id"], revealed),
         )
         db.commit()
-    event = events[cursor]
+    event = dict(events[cursor])
+    event_sequence = int(
+        event.get("sequence", cursor)
+    )
+    event["visual"] = visual_event_metadata(
+        snapshot,
+        event,
+        event_sequence,
+        seed=int(row["seed"]),
+    )
     return True, "Event revealed.", {
         "completed": False,
         "event": event,
@@ -1367,6 +1396,7 @@ def start_next_season(career_id):
             return False, "Complete the remaining off-season calendar weeks first."
         next_number = career["season_number"] + 1
         next_label = _next_season_label(career["season_label"])
+        initialize_world_memberships(db, career_id, next_number)
         membership = db.execute(
             """
             SELECT league_id FROM world_memberships
@@ -1424,6 +1454,19 @@ def get_pending_transfer_offers(career_id):
         """,
         (career_id,),
     ).fetchall()
+
+
+
+def _transfer_can_rebuild_current_schedule(db, career_id, season_number):
+    """Only rebuild a current season before any fixture has become historical save data."""
+    return db.execute(
+        """
+        SELECT 1 FROM fixtures
+        WHERE career_id=? AND season_number=? AND played=1
+        LIMIT 1
+        """,
+        (career_id, season_number),
+    ).fetchone() is None
 
 
 def accept_transfer_offer(career_id, offer_id):
@@ -1503,7 +1546,12 @@ def accept_transfer_offer(career_id, offer_id):
                 offer["signing_bonus"], squad_level, trust, career_id,
             ),
         )
-        if offer["season_number"] == career["season_number"]:
+        if (
+            offer["season_number"] == career["season_number"]
+            and _transfer_can_rebuild_current_schedule(
+                db, career_id, career["season_number"]
+            )
+        ):
             # A July transfer happens before the first competitive fixture. Rebuild
             # the active schedule around the destination league without mutating
             # wider world memberships or completed historical seasons.
@@ -1699,14 +1747,12 @@ def advance_calendar_week(career_id, seed=None):
         # Off-season weeks default to controlled recovery when the user does not
         # explicitly choose a programme. This prevents dead clicks while still
         # rewarding deliberate choices on the calendar or finance screen.
-        action = db.execute(
-            """
-            SELECT title FROM career_week_actions
-            WHERE career_id=? AND season_number=? AND calendar_week=?
-            ORDER BY id LIMIT 1
-            """,
-            (career_id, career["season_number"], career["calendar_week"]),
-        ).fetchone()
+        action = economy_get_selected_player_programme(
+            db,
+            career_id,
+            career["season_number"],
+            career["calendar_week"],
+        )
         if career["season_phase"] == "offseason" and action is None:
             db.execute(
                 "UPDATE careers SET fitness=MIN(100,fitness+6),morale=MIN(100,morale+2),stress=MAX(0,stress-4) WHERE id=?",
@@ -1851,14 +1897,12 @@ def get_career_command_center(career_id):
         "SELECT COUNT(*) AS n FROM endorsements WHERE career_id=? AND status='pending'",
         (career_id,),
     ).fetchone()["n"]
-    selected_programme = db.execute(
-        """
-        SELECT title FROM career_week_actions
-        WHERE career_id=? AND season_number=? AND calendar_week=?
-        ORDER BY id DESC LIMIT 1
-        """,
-        (career_id, career["season_number"], career["calendar_week"]),
-    ).fetchone()
+    selected_programme = economy_get_selected_player_programme(
+        db,
+        career_id,
+        career["season_number"],
+        career["calendar_week"],
+    )
 
     fixtures = list(context.get("fixtures_this_week") or []) if context else []
     events = list(context.get("events") or []) if context else []
@@ -1915,7 +1959,13 @@ def get_career_command_center(career_id):
         decisions.append({"kind": "market", "label": f"{len(market['watching'])} club(s) watching", "detail": "Recruitment interest is developing.", "priority": 35})
     if pending_endorsements:
         decisions.append({"kind": "finance", "label": f"{pending_endorsements} sponsorship offer(s)", "detail": "Commercial terms are waiting in Finances.", "priority": 60})
-    if career["season_phase"] in {"offseason", "preseason"} and selected_programme is None and not fixtures:
+    if (
+        context
+        and not context.get("calendar_complete")
+        and any(item["event_type"] == "offseason" for item in events)
+        and selected_programme is None
+        and not fixtures
+    ):
         decisions.append({"kind": "calendar", "label": "Choose a player programme", "detail": "Use this free week deliberately before advancing it.", "priority": 50})
     if career["fitness"] < 60:
         decisions.append({"kind": "development", "label": "Fitness needs attention", "detail": f"Current fitness is {career['fitness']}%. A recovery focus may be safer.", "priority": 45})

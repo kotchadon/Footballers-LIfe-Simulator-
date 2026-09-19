@@ -1,6 +1,13 @@
 {% extends "base.html" %}
+{% from "_player_visual.html" import player_visual as render_player_visual %}
 {% block title %}Live Match Centre{% endblock %}
 {% block page_id %}match{% endblock %}
+{% block head_extra %}
+<link rel="stylesheet" href="{{ url_for('static', filename='match/match.css', v='1.7.0') }}">
+{% endblock %}
+{% block scripts_extra %}
+<script type="module" src="{{ url_for('static', filename='match/bootstrap.js', v='1.7.0') }}"></script>
+{% endblock %}
 {% block content %}
 <section class="match-stage" id="match-stage"
   data-session-id="{{ session.public_id }}"
@@ -8,14 +15,15 @@
   data-event-count="{{ session.event_count }}"
   data-player-team-home="{{ 'true' if session.player_team_is_home else 'false' }}"
   data-advance-endpoint="{{ url_for('main.advance_match_api', session_id=session.public_id) }}"
-  data-complete-endpoint="{{ url_for('main.complete_match_api', session_id=session.public_id) }}">
+  data-complete-endpoint="{{ url_for('main.complete_match_api', session_id=session.public_id) }}"
+  data-visual-endpoint="{{ url_for('main.match_visual_plan_api', session_id=session.public_id) }}">
   <div class="match-stage-top">
     <span class="live-badge"><i></i> SEALED MATCH REPLAY</span>
     <div class="match-clock"><strong id="match-minute">00'</strong><span id="match-status">Preparing</span></div>
     <div class="speed-controls" aria-label="Replay speed">
       <button type="button" data-match-speed="1" class="active">1×</button>
       <button type="button" data-match-speed="2">2×</button>
-      <button type="button" data-match-speed="3">3×</button>
+      <button type="button" data-match-speed="4">4×</button>
     </div>
   </div>
 
@@ -25,8 +33,74 @@
     <div class="team-side away"><span class="club-monogram">{{ session.away_name[:2]|upper }}</span><h1>{{ session.away_name }}</h1></div>
   </div>
 
+
+  <div class="match-visual-shell">
+    <div class="match-visual-stage" id="match-visual-stage">
+      <svg class="match-pitch-svg" id="match-pitch-svg" viewBox="0 0 1000 620" role="img" aria-label="Broadcast tactical football pitch">
+        <defs>
+          <linearGradient id="pitch-grass" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#174b38"></stop>
+            <stop offset="100%" stop-color="#0b2d25"></stop>
+          </linearGradient>
+        </defs>
+        <polygon class="pitch-surface" points="35,90 965,90 995,570 5,570"></polygon>
+        <polyline class="pitch-line" points="35,90 965,90 995,570 5,570 35,90"></polyline>
+        <line class="pitch-line" x1="500" y1="90" x2="500" y2="570"></line>
+        <ellipse class="pitch-line pitch-centre-circle" cx="500" cy="330" rx="78" ry="118"></ellipse>
+        <circle class="pitch-dot" cx="500" cy="330" r="4"></circle>
+        <path class="pitch-line" d="M35 190 L190 205 L200 455 L12 470"></path>
+        <path class="pitch-line" d="M965 190 L810 205 L800 455 L988 470"></path>
+        <path class="pitch-line" d="M35 260 L105 267 L109 393 L22 400"></path>
+        <path class="pitch-line" d="M965 260 L895 267 L891 393 L978 400"></path>
+        <path class="goal-frame" d="M35 285 L8 290 L8 370 L25 372"></path>
+        <path class="goal-frame" d="M965 285 L992 290 L992 370 L975 372"></path>
+      </svg>
+      <canvas id="match-canvas" class="match-canvas" aria-label="Animated live football visualization"></canvas>
+      <div class="match-event-overlay" id="match-event-overlay" aria-live="polite">
+        <span>TACTICAL FEED</span>
+        <strong id="match-visual-status">Loading teams…</strong>
+      </div>
+      <div class="match-transition-overlay" id="match-transition-overlay" aria-live="polite" hidden>
+        <span>MATCH STATE</span>
+        <strong id="match-transition-text">HALF TIME</strong>
+      </div>
+      <div class="match-visual-fallback" id="match-visual-fallback" hidden>
+        Visual feed unavailable · commentary replay remains active.
+      </div>
+    </div>
+    <div class="match-visual-legend" aria-label="Match visualization legend">
+      <span><i class="legend-home"></i>{{ session.home_name }}</span>
+      <span><i class="legend-user"></i>{{ session.player_name }}</span>
+      <span><i class="legend-away"></i>{{ session.away_name }}</span>
+    </div>
+  </div>
+
+<div class="match-live-indicators" aria-label="Live match indicators">
+    <div class="match-live-indicator">
+      <span>REVEALED SHOTS</span>
+      <strong>
+        <b id="home-revealed-shots">0</b>
+        <i>–</i>
+        <b id="away-revealed-shots">0</b>
+      </strong>
+      <small>EVENT LEDGER</small>
+    </div>
+    <div class="match-live-indicator">
+      <span>PRESSURE</span>
+      <strong id="match-pressure">Balanced</strong>
+      <small>PRESENTATION</small>
+    </div>
+    <div class="match-live-indicator">
+      <span>TERRITORY</span>
+      <strong id="match-territory">Central</strong>
+      <small>PRESENTATION</small>
+    </div>
+  </div>
+
   <div class="match-controls">
     <button type="button" class="button secondary" id="pause-replay">Pause <kbd>Space</kbd></button>
+    <button type="button" class="button secondary skip-next-event" id="skip-next-event">Next major event <kbd>N</kbd></button>
+    <button type="button" class="button secondary match-audio-toggle" id="match-audio-toggle" aria-pressed="false">Audio off</button>
     <button type="button" class="button secondary" id="finish-replay">Skip to full time <kbd>Enter</kbd></button>
   </div>
 </section>
@@ -37,16 +111,58 @@
     <div class="timeline" id="match-timeline" aria-live="polite"></div>
   </section>
 
-  <aside class="panel player-match-card" id="player-briefing">
-    <p class="eyebrow">MATCH BRIEFING</p>
-    <h2>{{ session.player_name }}</h2>
-    <span class="selection-label">{{ session.selection_status|upper }}</span>
-    <div class="briefing-lines">
-      <p><span>Position</span><strong>{{ session.position }}</strong></p>
-      <p><span>Competition</span><strong>League · Week {{ session.week }}</strong></p>
-      <p><span>Replay integrity</span><strong>Result sealed</strong></p>
+  <aside
+    class="panel player-match-card live-player-focus"
+    id="player-briefing"
+    data-selection-origin="{{ session.selection_status }}"
+  >
+    <div class="live-player-focus__identity">
+      <div class="live-player-focus__portrait" aria-label="Career player portrait">
+        {{ render_player_visual(player_visual_model, size='match', show_status=False) }}
+        <span class="live-player-focus__ring" aria-hidden="true"></span>
+      </div>
+      <div class="live-player-focus__copy">
+        <p class="eyebrow">PLAYER FOCUS</p>
+        <h2>{{ session.player_name }}</h2>
+        <div class="live-player-focus__tags">
+          <span>{{ session.position }}</span>
+          <span>#17</span>
+          <strong id="live-player-state" aria-live="polite">
+            {% if session.selection_status == "starter" %}
+              STARTING
+            {% elif session.selection_status in ["substitute", "bench"] %}
+              BENCH
+            {% else %}
+              NOT SELECTED
+            {% endif %}
+          </strong>
+        </div>
+      </div>
     </div>
-    <p class="muted">Final score, rating, development, rewards and analysis stay locked until full time.</p>
+
+    <div class="live-player-focus__metrics" aria-label="Revealed player match facts">
+      <div>
+        <span>FITNESS</span>
+        <strong id="live-player-fitness">{{ career.fitness }}%</strong>
+      </div>
+      <div>
+        <span>GOALS</span>
+        <strong id="live-player-goals">0</strong>
+      </div>
+      <div>
+        <span>ASSISTS</span>
+        <strong id="live-player-assists">0</strong>
+      </div>
+      <div>
+        <span>CARDS</span>
+        <strong id="live-player-cards">0Y / 0R</strong>
+      </div>
+    </div>
+
+    <p class="live-player-focus__safe-note">
+      Only facts already revealed by the event ledger appear here.
+      Performance grade stays locked until full time.
+    </p>
   </aside>
 </div>
 
@@ -55,7 +171,7 @@
   <div>
     <p class="eyebrow">POST-MATCH INTELLIGENCE</p>
     <h2>Report locked until full time</h2>
-    <p>No final score, rating, rewards, development outcome or analysis exists in this page markup. The server releases the report only after the match is completed.</p>
+    <p>Final score, rating, development, rewards and analysis stay locked until full time. The server releases the post-match report only after the match is completed.</p>
   </div>
 </section>
 

@@ -91,6 +91,21 @@ OFFSEASON_ACTIONS = {
 }
 
 
+
+def get_selected_player_programme(db, career_id: int, season_number: int, calendar_week: int):
+    action_types = tuple(OFFSEASON_ACTIONS)
+    placeholders = ",".join("?" for _ in action_types)
+    return db.execute(
+        f"""
+        SELECT * FROM career_week_actions
+        WHERE career_id=? AND season_number=? AND calendar_week=?
+          AND action_type IN ({placeholders})
+        ORDER BY id DESC LIMIT 1
+        """,
+        (career_id, season_number, calendar_week, *action_types),
+    ).fetchone()
+
+
 def seed_economy_catalog(db) -> None:
     for code, name, instrument_type, price, drift, volatility in INVESTMENT_INSTRUMENTS:
         db.execute(
@@ -501,13 +516,12 @@ def take_offseason_action(db, career_id: int, action: str) -> tuple[bool, str]:
         return False, "Unknown player programme."
     if career["season_phase"] not in {"offseason", "preseason"} and career["calendar_week"] not in {1, 2, 3, 51, 52}:
         return False, "This programme is available only during designated off-season weeks."
-    if db.execute(
-        """
-        SELECT 1 FROM career_week_actions
-        WHERE career_id=? AND season_number=? AND calendar_week=?
-        """,
-        (career_id, career["season_number"], career["calendar_week"]),
-    ).fetchone():
+    if get_selected_player_programme(
+        db,
+        career_id,
+        career["season_number"],
+        career["calendar_week"],
+    ):
         return False, "You have already chosen this week's player programme."
     cost = int(definition.get("cost", 0))
     income = int(definition.get("income", 0))
@@ -547,6 +561,23 @@ def take_offseason_action(db, career_id: int, action: str) -> tuple[bool, str]:
     return True, f"{definition['label']} selected. {definition['description']}"
 
 
+
+def _investment_position_metrics(units, average_cost, current_price) -> dict[str, float]:
+    units = float(units or 0)
+    average_cost = float(average_cost or 0)
+    current_price = float(current_price or 0)
+    cost_basis = units * average_cost
+    current_value = units * current_price
+    gain_loss = current_value - cost_basis
+    gain_loss_pct = (gain_loss / cost_basis * 100) if cost_basis else 0.0
+    return {
+        "cost_basis": round(cost_basis, 2),
+        "current_value": round(current_value, 2),
+        "gain_loss": round(gain_loss, 2),
+        "gain_loss_pct": round(gain_loss_pct, 2),
+    }
+
+
 def get_financial_dashboard(db, career_id: int) -> dict[str, Any]:
     career = db.execute("SELECT * FROM careers WHERE id=?", (career_id,)).fetchone()
     if career is None:
@@ -576,7 +607,18 @@ def get_financial_dashboard(db, career_id: int) -> dict[str, Any]:
         """,
         (career_id,),
     ).fetchall()
-    position_value = sum(float(row["units"]) * float(row["current_price"]) for row in positions)
+    decorated_positions = []
+    for row in positions:
+        item = dict(row)
+        item.update(_investment_position_metrics(row["units"], row["average_cost"], row["current_price"]))
+        decorated_positions.append(item)
+    positions = decorated_positions
+    position_value = sum(item["current_value"] for item in positions)
+    position_cost_basis = sum(item["cost_basis"] for item in positions)
+    investment_gain_loss = position_value - position_cost_basis
+    investment_gain_loss_pct = (
+        investment_gain_loss / position_cost_basis * 100 if position_cost_basis else 0.0
+    )
     properties = db.execute(
         """
         SELECT op.*, pc.code, pc.name, pc.weekly_rent, pc.weekly_maintenance,
@@ -713,6 +755,9 @@ def get_financial_dashboard(db, career_id: int) -> dict[str, Any]:
         "totals": totals,
         "categories": categories,
         "investment_value": round(position_value),
+        "investment_cost_basis": round(position_cost_basis),
+        "investment_gain_loss": round(investment_gain_loss),
+        "investment_gain_loss_pct": round(investment_gain_loss_pct, 2),
         "property_value": property_value,
         "net_worth": round(career["money"] + position_value + property_value),
         "offseason_actions": OFFSEASON_ACTIONS,

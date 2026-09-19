@@ -48,6 +48,7 @@ from .services import (
     take_offseason_action,
     train_player,
 )
+from .player_visuals import build_player_visual
 
 bp = Blueprint("main", __name__)
 
@@ -102,6 +103,7 @@ def index():
     return render_template(
         "dashboard.html",
         career=career,
+        player_visual_model=build_player_visual(career, context="dashboard"),
         fixture=get_next_player_fixture(career),
         active_match=active_match,
         standings=get_standings(career["id"]),
@@ -160,7 +162,16 @@ def match_centre(session_id):
     if session is None:
         flash("That match session does not exist for the active career.")
         return redirect(url_for("main.index"))
-    return render_template("match.html", career=career, session=session)
+    return render_template(
+        "match.html",
+        career=career,
+        session=session,
+        player_visual_model=build_player_visual(
+            career,
+            selection_status=session["selection_status"],
+            context="match",
+        ),
+    )
 
 
 @bp.post("/api/matches/<session_id>/advance")
@@ -405,3 +416,15 @@ def world_league(league_id):
         "world.html", career=career, world=get_world_overview(career["id"]), selected=selected,
         entries=get_competition_entries(career["id"]), honours=get_competition_honours(career["id"]),
     )
+
+@bp.get("/api/matches/<session_id>/visual-plan")
+def match_visual_plan_api(session_id):
+    from .services import get_match_visual_plan
+
+    career = get_active_career()
+    if career is None:
+        return jsonify({"ok": False, "message": "Create a career first."}), 404
+    plan = get_match_visual_plan(session_id, career["id"])
+    if plan is None:
+        return jsonify({"ok": False, "message": "Match not found."}), 404
+    return jsonify({"ok": True, "visual": plan})
