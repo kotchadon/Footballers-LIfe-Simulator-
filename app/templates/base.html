@@ -9,6 +9,7 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='theme-ps2.css') }}?v=1.0.0">
   <script defer src="{{ url_for('static', filename='assets/real/logo-manifest.js', v='6.5.0') }}"></script>
   <script defer src="{{ url_for('static', filename='app.js', v='6.5.0') }}"></script>
+  {% block head_extra %}{% endblock %}
 </head>
 <body data-page="{% block page_id %}default{% endblock %}">
   <div class="ambient-stadium" aria-hidden="true"><i></i><i></i><i></i></div>
@@ -101,8 +102,9 @@
     <div class="shortcut-sections">
       <section><p class="shortcut-section-title">NAVIGATION</p><div class="shortcut-grid"><div><kbd>H</kbd><span>Dashboard</span></div><div><kbd>K</kbd><span>Calendar</span></div><div><kbd>M</kbd><span>Market</span></div><div><kbd>F</kbd><span>Finances</span></div><div><kbd>W</kbd><span>World</span></div><div><kbd>Y</kbd><span>History</span></div><div><kbd>C</kbd><span>Continue / resolve current action</span></div><div><kbd>?</kbd><span>Open this control guide</span></div></div></section>
       <section><p class="shortcut-section-title">DASHBOARD TRAINING</p><div class="shortcut-grid"><div><kbd>1–6</kbd><span>Choose attribute focus</span></div><div><kbd>R</kbd><span>Recovery focus</span></div></div></section>
-      <section><p class="shortcut-section-title">MATCH CONTROL</p><div class="shortcut-grid"><div><kbd>Space</kbd><span>Pause / resume replay</span></div><div><kbd>1–3</kbd><span>Replay speed</span></div><div><kbd>Enter</kbd><span>Skip to full time</span></div></div></section>
+      <section><p class="shortcut-section-title">MATCH CONTROL</p><div class="shortcut-grid"><div><kbd>Space</kbd><span>Pause / resume replay</span></div><div><kbd>1/2/4</kbd><span>Replay speed</span></div><div><kbd>Enter</kbd><span>Skip to full time</span></div></div></section>
     </div>
   </dialog>
+  {% block scripts_extra %}{% endblock %}
 </body>
 </html>

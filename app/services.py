@@ -8,6 +8,7 @@ import uuid
 from datetime import datetime, timezone
 
 from .db import get_db
+from .match_visuals import build_visual_plan, visual_event_metadata
 from .calendar_engine import generate_season_calendar, get_calendar, get_week_context
 from .economy import (
     accept_endorsement as economy_accept_endorsement,
@@ -635,7 +636,7 @@ def _build_match_snapshot(career, fixtures, seed):
     max_week = max(fixture["week"] for fixture in fixtures)
     # max_week above is current week only; actual season max is resolved during commit.
 
-    return {
+    snapshot = {
         "schema_version": 1,
         "seed": seed,
         "career": {
@@ -686,6 +687,8 @@ def _build_match_snapshot(career, fixtures, seed):
             "bonus": bonus,
         },
     }
+    snapshot["visual"] = build_visual_plan(snapshot, seed)
+    return snapshot
 
 
 def prepare_next_match(career_id, seed=None):
@@ -789,6 +792,22 @@ def prepare_next_match(career_id, seed=None):
     return db.execute("SELECT * FROM match_sessions WHERE public_id = ?", (public_id,)).fetchone()
 
 
+
+def get_match_visual_plan(public_id, career_id):
+    row = get_db().execute(
+        "SELECT seed, simulation_json FROM match_sessions WHERE public_id = ? AND career_id = ?",
+        (public_id, career_id),
+    ).fetchone()
+    if row is None:
+        return None
+    snapshot = json.loads(row["simulation_json"])
+    plan = snapshot.get("visual")
+    if not isinstance(plan, dict):
+        plan = build_visual_plan(snapshot, int(row["seed"]))
+    return plan
+
+
+
 def get_match_session_view(public_id, career_id):
     row = get_db().execute(
         "SELECT * FROM match_sessions WHERE public_id = ? AND career_id = ?",
@@ -846,7 +865,16 @@ def advance_match_session(public_id, career_id, cursor):
             (revealed + 1, row["id"], revealed),
         )
         db.commit()
-    event = events[cursor]
+    event = dict(events[cursor])
+    event_sequence = int(
+        event.get("sequence", cursor)
+    )
+    event["visual"] = visual_event_metadata(
+        snapshot,
+        event,
+        event_sequence,
+        seed=int(row["seed"]),
+    )
     return True, "Event revealed.", {
         "completed": False,
         "event": event,
