@@ -366,3 +366,107 @@ def test_tactical_engine_exposes_authoritative_shot_override():
     assert "playKeeperAction" in text
     assert "ballController.shoot" in text
     assert "ballController.deflect" in text
+
+def test_slice7_match_focus_reuses_v5_portrait_and_live_safe_fields():
+    source = Path("app/templates/match.html").read_text()
+    assert '{% from "_player_visual.html" import player_visual as render_player_visual %}' in source
+    assert "render_player_visual(player_visual_model" in source
+    assert 'id="live-player-state"' in source
+    assert 'id="live-player-fitness"' in source
+    assert 'id="live-player-goals"' in source
+    assert 'id="live-player-assists"' in source
+    assert 'id="live-player-cards"' in source
+    assert "#17" in source
+    for status in ("STARTING", "BENCH", "NOT SELECTED"):
+        assert status in source
+
+    app = Path("app/static/app.js").read_text()
+    assert '"ON PITCH"' in app
+    assert '"SUBBED OFF"' in app
+
+    start = source.index('id="player-briefing"')
+    end = source.index("</aside>", start)
+    panel = source[start:end].lower()
+    assert "rating" not in panel
+
+
+def test_slice7_match_route_builds_read_only_match_portrait_context():
+    source = Path("app/routes.py").read_text()
+    assert "player_visual_model=build_player_visual(" in source
+    assert 'selection_status=session["selection_status"]' in source
+    assert 'context="match"' in source
+
+
+def test_slice7_shared_portrait_escapes_hostile_player_name():
+    from jinja2 import Environment, FileSystemLoader, select_autoescape
+    from app.player_visuals import build_player_visual
+
+    career = {
+        "id": 17,
+        "player_name": '<script>alert("x")</script>',
+        "position": "CM",
+        "overall": 72,
+        "club_id": 4,
+        "club_name": "Test United",
+        "fitness": 91,
+        "morale": 78,
+        "stress": 22,
+        "injured_weeks": 0,
+        "suspended_matches": 0,
+    }
+
+    env = Environment(
+        loader=FileSystemLoader(Path("app/templates")),
+        autoescape=select_autoescape(("html", "xml")),
+    )
+    module = env.get_template("_player_visual.html").module
+    visual = build_player_visual(
+        career,
+        selection_status="starter",
+        context="match",
+    )
+    html = str(
+        module.player_visual(
+            visual,
+            size="match",
+            show_status=False,
+        )
+    )
+
+    assert "<script>" not in html
+    assert "&lt;script&gt;" in html
+
+
+def test_slice7_live_team_indicators_are_explicitly_presentation_only():
+    source = Path("app/templates/match.html").read_text()
+    for token in (
+        'id="home-revealed-shots"',
+        'id="away-revealed-shots"',
+        'id="match-pressure"',
+        'id="match-territory"',
+        "PRESENTATION",
+    ):
+        assert token in source
+
+
+def test_slice7_audio_toggle_defaults_off_and_is_accessible():
+    source = Path("app/templates/match.html").read_text()
+    assert 'id="match-audio-toggle"' in source
+    assert 'aria-pressed="false"' in source
+    assert "Audio off" in source
+
+
+def test_slice7_audio_controller_is_local_synthesis_only():
+    audio = Path("app/static/match/audio.js")
+    assert audio.exists()
+    text = audio.read_text()
+    assert "export function createAudioController" in text
+    assert "enabled = false" in text
+    assert "function setEnabled(" in text
+    assert "function play(" in text
+    for cue in ("whistle", "kick", "crowd", "goal"):
+        assert f'"{cue}"' in text
+    lowered = text.lower()
+    assert "http://" not in lowered
+    assert "https://" not in lowered
+    assert "new audio(" not in lowered

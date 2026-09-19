@@ -150,3 +150,230 @@ body[data-page="match"] .stadium-scoreboard { margin-bottom: 0; }
     transition: none !important;
   }
 }
+
+.live-player-focus {
+  position: relative;
+  overflow: hidden;
+  display: grid;
+  gap: 18px;
+  border-top: 3px solid rgba(240,196,79,.86);
+}
+
+.live-player-focus::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(
+      135deg,
+      rgba(95,168,255,.08),
+      transparent 44%
+    );
+}
+
+.live-player-focus__identity {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: 116px minmax(0,1fr);
+  gap: 16px;
+  align-items: center;
+}
+
+.live-player-focus__portrait {
+  position: relative;
+  width: 116px;
+  height: 116px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 8px;
+  background:
+    linear-gradient(
+      180deg,
+      rgba(18,39,67,.96),
+      rgba(6,14,26,.98)
+    );
+  border: 1px solid rgba(143,177,226,.28);
+}
+
+.live-player-focus__portrait .player-visual {
+  width: 124px;
+  max-width: none;
+  margin: 8px 0 0;
+  transform: translateY(2px);
+}
+
+.live-player-focus__portrait .player-visual__svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.live-player-focus__ring {
+  position: absolute;
+  inset: 7px;
+  border: 1px solid rgba(240,196,79,.5);
+  border-radius: 6px;
+  pointer-events: none;
+}
+
+.live-player-focus__copy {
+  min-width: 0;
+}
+
+.live-player-focus__copy h2 {
+  margin: 3px 0 10px;
+  overflow-wrap: anywhere;
+}
+
+.live-player-focus__tags {
+  display: flex;
+  gap: 7px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.live-player-focus__tags span,
+.live-player-focus__tags strong {
+  min-height: 25px;
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 8px;
+  border: 1px solid rgba(143,177,226,.2);
+  background: rgba(8,18,33,.76);
+  color: #dbe8fb;
+  font-size: .68rem;
+  line-height: 1;
+  letter-spacing: .08em;
+}
+
+.live-player-focus__tags strong {
+  color: #f0c44f;
+  border-color: rgba(240,196,79,.38);
+}
+
+.live-player-focus__metrics {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: repeat(2,minmax(0,1fr));
+  gap: 8px;
+}
+
+.live-player-focus__metrics > div {
+  min-width: 0;
+  padding: 10px 11px;
+  border: 1px solid rgba(143,177,226,.16);
+  background: rgba(4,11,21,.54);
+}
+
+.live-player-focus__metrics span,
+.match-live-indicator span,
+.match-live-indicator small {
+  display: block;
+  color: #8399ba;
+  font-size: .59rem;
+  font-weight: 800;
+  letter-spacing: .13em;
+}
+
+.live-player-focus__metrics strong {
+  display: block;
+  margin-top: 5px;
+  color: #f4f7fb;
+  font-size: 1rem;
+}
+
+.live-player-focus__safe-note {
+  position: relative;
+  z-index: 1;
+  margin: 0;
+  color: #7f93b2;
+  font-size: .72rem;
+  line-height: 1.45;
+}
+
+.live-player-focus.is-live-event {
+  animation: livePlayerFocusHit .56s ease;
+}
+
+@keyframes livePlayerFocusHit {
+  0% {
+    box-shadow: 0 0 0 rgba(240,196,79,0);
+  }
+  36% {
+    box-shadow: 0 0 26px rgba(240,196,79,.18);
+  }
+  100% {
+    box-shadow: 0 0 0 rgba(240,196,79,0);
+  }
+}
+
+.match-live-indicators {
+  width: min(920px,100%);
+  margin: 9px auto 14px;
+  display: grid;
+  grid-template-columns: repeat(3,minmax(0,1fr));
+  gap: 8px;
+}
+
+.match-live-indicator {
+  min-width: 0;
+  padding: 9px 12px;
+  background: rgba(4,12,24,.68);
+  border: 1px solid rgba(143,177,226,.16);
+}
+
+.match-live-indicator strong {
+  display: block;
+  margin: 5px 0 3px;
+  color: #f4f7fb;
+  font-size: .92rem;
+  letter-spacing: .04em;
+}
+
+.match-live-indicator strong b,
+.match-live-indicator strong i {
+  font-style: normal;
+}
+
+.match-live-indicator small {
+  color: #607695;
+  font-size: .51rem;
+}
+
+.match-audio-toggle.is-active {
+  border-color: rgba(240,196,79,.6);
+  color: #f0c44f;
+}
+
+@media (max-width: 760px) {
+  .match-live-indicators {
+    grid-template-columns: 1fr;
+  }
+
+  .live-player-focus__identity {
+    grid-template-columns: 92px minmax(0,1fr);
+  }
+
+  .live-player-focus__portrait {
+    width: 92px;
+    height: 92px;
+  }
+
+  .live-player-focus__portrait .player-visual {
+    width: 100px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .live-player-focus.is-live-event {
+    animation: none !important;
+  }
+
+  .live-player-focus__portrait .player-visual {
+    transition: none !important;
+  }
+}

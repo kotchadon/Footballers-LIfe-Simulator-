@@ -291,3 +291,79 @@ def test_next_major_event_n_keyboard_shortcut_is_bound_safely():
     assert 'document.addEventListener(' in text
     assert '"keydown"' in text
     assert "handleNextEventShortcut" in text
+
+def test_slice7_live_player_stats_only_consume_revealed_event_argument():
+    text = Path("app/static/app.js").read_text()
+    start = text.index("function updateLivePresentation(item)")
+    end = text.index("function addEventImmediate(", start)
+    block = text[start:end]
+
+    assert "item?.visual" in block
+    assert "item?.metadata?.contribution" in block
+    assert '"career_player"' in block
+    assert '"substitution_on"' in block
+    assert '"substitution_off"' in block
+    assert '"goal"' in block
+    assert '"assist"' in block
+    assert '"yellow_card"' in block
+    assert '"red_card"' in block
+    assert "fetch(" not in block
+    assert "completeEndpoint" not in block
+    assert "remaining_events" not in block
+    assert "simulation_json" not in block
+
+
+def test_slice7_revealed_shot_counter_uses_visual_side_only():
+    text = Path("app/static/app.js").read_text()
+    start = text.index("function updateLivePresentation(item)")
+    end = text.index("function addEventImmediate(", start)
+    block = text[start:end]
+    assert '["goal", "save", "miss"].includes(visualKind)' in block
+    assert 'visual.side === "home"' in block
+    assert 'visual.side === "away"' in block
+
+
+def test_slice7_audio_preference_and_event_audio_are_wired_in_bootstrap():
+    text = Path("app/static/match/bootstrap.js").read_text()
+    assert 'from "./audio.js"' in text
+    assert "createAudioController" in text
+    assert 'localStorage.getItem("footy-match-audio")' in text
+    assert "localStorage.setItem(" in text
+    assert '"footy-match-audio"' in text
+    assert 'enabled ? "1" : "0"' in text
+    assert "audio.setEnabled(enabled)" in text
+    assert 'audio.play("goal")' in text
+    assert 'audio.play("kick")' in text
+    assert 'audio.play("whistle")' in text
+
+
+def test_slice7_match_engine_exposes_presentation_ball_state_not_hidden_events():
+    text = Path("app/static/match/match-engine.js").read_text()
+    start = text.index("onStatus({")
+    end = text.index("});", start)
+    block = text[start:end]
+    assert "ball: state.ball" in block
+    assert "visualMinute" in block
+    assert "events" not in block
+    assert "report" not in block
+
+
+def test_slice7_pressure_and_territory_are_labelled_presentation_data():
+    text = Path("app/static/match/bootstrap.js").read_text()
+    assert "function updatePresentationIndicators(status)" in text
+    assert "matchPressure" in text
+    assert "matchTerritory" in text
+    assert '"HOME HALF"' in text
+    assert '"CENTRAL"' in text
+    assert '"AWAY HALF"' in text
+
+
+def test_slice7_reduced_motion_keeps_camera_shake_disabled_and_event_motion_optional():
+    camera = Path("app/static/match/camera.js").read_text()
+    css = Path("app/static/match/match.css").read_text()
+    assert "!reducedMotion" in camera
+    assert 'state.emphasis === "GOAL"' in camera
+    assert "@media (prefers-reduced-motion: reduce)" in css
+    assert ".live-player-focus.is-live-event" in css
+    reduced = css.split("@media (prefers-reduced-motion: reduce)", 1)[1]
+    assert "animation: none" in reduced or "animation:none" in reduced

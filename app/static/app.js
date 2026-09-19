@@ -444,6 +444,13 @@
     const pauseButton = document.getElementById("pause-replay");
     const finishButton = document.getElementById("finish-replay");
     const nextEventButton = document.getElementById("skip-next-event");
+    const livePlayerFocus = document.getElementById("player-briefing");
+    const livePlayerState = document.getElementById("live-player-state");
+    const livePlayerGoals = document.getElementById("live-player-goals");
+    const livePlayerAssists = document.getElementById("live-player-assists");
+    const livePlayerCards = document.getElementById("live-player-cards");
+    const homeRevealedShots = document.getElementById("home-revealed-shots");
+    const awayRevealedShots = document.getElementById("away-revealed-shots");
     const reportLock = document.getElementById("report-lock");
     const reportMount = document.getElementById("post-match-mount");
     const playerTeamHome = stage.dataset.playerTeamHome === "true";
@@ -463,6 +470,17 @@
     let finalising = false;
     let reportShown = false;
     let skipInProgress = false;
+    const livePresentationSeen = new Set();
+    const livePlayerStats = {
+      goals: 0,
+      assists: 0,
+      yellow: 0,
+      red: 0,
+    };
+    const revealedShots = {
+      home: 0,
+      away: 0,
+    };
     const REAL_SECONDS_PER_MATCH_MINUTE = 2;
     const BASE_MATCH_DURATION_MS = 90 * REAL_SECONDS_PER_MATCH_MINUTE * 1000;
 
@@ -487,8 +505,154 @@
       return playerTeamHome ? {home: player, away: opponent} : {home: opponent, away: player};
     }
 
+    function pulseLivePlayerFocus() {
+      if (!livePlayerFocus) return;
+
+      livePlayerFocus.classList.remove("is-live-event");
+      void livePlayerFocus.offsetWidth;
+      livePlayerFocus.classList.add("is-live-event");
+
+      window.setTimeout(() => {
+        livePlayerFocus.classList.remove("is-live-event");
+      }, 620);
+    }
+
+    function updateLivePresentation(item) {
+      if (!item) return;
+
+      const key = String(
+        item.sequence
+        ?? `${item.minute || 0}:${item.kind || "moment"}:${item.text || ""}`,
+      );
+
+      if (livePresentationSeen.has(key)) return;
+      livePresentationSeen.add(key);
+
+      const visual = item?.visual || {};
+      const sourceKind = String(
+        visual.source_kind
+        || item.kind
+        || "",
+      ).toLowerCase();
+      const visualKind = String(
+        visual.kind
+        || "",
+      ).toLowerCase();
+      const contribution = String(
+        item?.metadata?.contribution
+        || "",
+      ).toLowerCase();
+      const careerEvent = (
+        visual.actor_id === "career_player"
+        || contribution === "goal"
+        || contribution === "assist"
+      );
+
+      let playerChanged = false;
+
+      if (
+        sourceKind === "goal_for"
+        && contribution === "goal"
+      ) {
+        livePlayerStats.goals += 1;
+        playerChanged = true;
+      }
+
+      if (
+        sourceKind === "goal_for"
+        && contribution === "assist"
+      ) {
+        livePlayerStats.assists += 1;
+        playerChanged = true;
+      }
+
+      if (
+        careerEvent
+        && visualKind === "yellow_card"
+      ) {
+        livePlayerStats.yellow += 1;
+        playerChanged = true;
+      }
+
+      if (
+        careerEvent
+        && visualKind === "red_card"
+      ) {
+        livePlayerStats.red += 1;
+        playerChanged = true;
+      }
+
+      if (
+        visual.actor_id === "career_player"
+        && visualKind === "substitution_on"
+        && livePlayerState
+      ) {
+        livePlayerState.textContent = "ON PITCH";
+        playerChanged = true;
+      }
+
+      if (
+        visual.actor_id === "career_player"
+        && visualKind === "substitution_off"
+        && livePlayerState
+      ) {
+        livePlayerState.textContent = "SUBBED OFF";
+        playerChanged = true;
+      }
+
+      if (livePlayerGoals) {
+        livePlayerGoals.textContent = String(
+          livePlayerStats.goals,
+        );
+      }
+
+      if (livePlayerAssists) {
+        livePlayerAssists.textContent = String(
+          livePlayerStats.assists,
+        );
+      }
+
+      if (livePlayerCards) {
+        livePlayerCards.textContent = (
+          `${livePlayerStats.yellow}Y / `
+          + `${livePlayerStats.red}R`
+        );
+      }
+
+      if (
+        ["goal", "save", "miss"].includes(visualKind)
+        && visual.side === "home"
+      ) {
+        revealedShots.home += 1;
+      }
+
+      if (
+        ["goal", "save", "miss"].includes(visualKind)
+        && visual.side === "away"
+      ) {
+        revealedShots.away += 1;
+      }
+
+      if (homeRevealedShots) {
+        homeRevealedShots.textContent = String(
+          revealedShots.home,
+        );
+      }
+
+      if (awayRevealedShots) {
+        awayRevealedShots.textContent = String(
+          revealedShots.away,
+        );
+      }
+
+      if (playerChanged) {
+        pulseLivePlayerFocus();
+      }
+    }
+
     function addEventImmediate(item, instant = false) {
       if (!item) return;
+      updateLivePresentation(item);
 if (timeline.querySelector(`[data-sequence="${item.sequence}"]`)) return;
       const row = document.createElement("article");
       row.className = `timeline-event ${item.kind || "moment"}`;

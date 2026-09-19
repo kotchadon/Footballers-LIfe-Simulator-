@@ -162,7 +162,16 @@ def match_centre(session_id):
     if session is None:
         flash("That match session does not exist for the active career.")
         return redirect(url_for("main.index"))
-    return render_template("match.html", career=career, session=session)
+    return render_template(
+        "match.html",
+        career=career,
+        session=session,
+        player_visual_model=build_player_visual(
+            career,
+            selection_status=session["selection_status"],
+            context="match",
+        ),
+    )
 
 
 @bp.post("/api/matches/<session_id>/advance")

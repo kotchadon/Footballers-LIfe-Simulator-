@@ -119,6 +119,8 @@ export function createMatchEngine({
         possessionTeam: state.possessionTeam,
         home: state.teams.home,
         away: state.teams.away,
+        ball: state.ball,
+        visualMinute,
       });
     }
 
