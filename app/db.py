@@ -27,6 +27,17 @@ CAREER_COLUMNS = {
     "stress": "INTEGER NOT NULL DEFAULT 15",
 }
 
+PLAYER_ATTRIBUTE_COLUMNS = {
+    "pace_xp": "INTEGER NOT NULL DEFAULT 0",
+    "shooting_xp": "INTEGER NOT NULL DEFAULT 0",
+    "passing_xp": "INTEGER NOT NULL DEFAULT 0",
+    "dribbling_xp": "INTEGER NOT NULL DEFAULT 0",
+    "defending_xp": "INTEGER NOT NULL DEFAULT 0",
+    "physical_xp": "INTEGER NOT NULL DEFAULT 0",
+    "legacy_xp_migrated": "INTEGER NOT NULL DEFAULT 0",
+}
+
+
 PLAYER_STATS_COLUMNS = {
     "sub_appearances": "INTEGER NOT NULL DEFAULT 0",
     "minutes": "INTEGER NOT NULL DEFAULT 0",
@@ -122,6 +133,7 @@ def migrate_existing_save(db):
     """Add newer fields without deleting an existing V1/V2 career save."""
     _add_missing_columns(db, "clubs", CLUB_COLUMNS)
     _add_missing_columns(db, "careers", CAREER_COLUMNS)
+    _add_missing_columns(db, "player_attributes", PLAYER_ATTRIBUTE_COLUMNS)
     _add_missing_columns(db, "player_stats", PLAYER_STATS_COLUMNS)
     _add_missing_columns(db, "fixtures", FIXTURE_COLUMNS)
     _add_missing_columns(db, "standings", STANDINGS_COLUMNS)
@@ -153,6 +165,54 @@ def migrate_existing_save(db):
                 ) VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
                 (career_id, base, base, base, base, base, base),
+            )
+
+        attribute_state = db.execute(
+            """
+            SELECT legacy_xp_migrated
+            FROM player_attributes
+            WHERE career_id = ?
+            """,
+            (career_id,),
+        ).fetchone()
+        if attribute_state is not None and not int(attribute_state["legacy_xp_migrated"]):
+            from .engine import POSITION_WEIGHTS
+
+            legacy_xp = max(0, int(career["xp"] or 0))
+            focus = career["training_focus"]
+            attribute_names = {
+                "pace", "shooting", "passing",
+                "dribbling", "defending", "physical",
+            }
+            if focus in attribute_names:
+                target = focus
+            else:
+                weights = POSITION_WEIGHTS.get(
+                    career["position"],
+                    POSITION_WEIGHTS["CM"],
+                )
+                target = max(weights, key=weights.get)
+
+            if legacy_xp:
+                db.execute(
+                    f"""
+                    UPDATE player_attributes
+                    SET {target}_xp = {target}_xp + ?
+                    WHERE career_id = ?
+                    """,
+                    (legacy_xp, career_id),
+                )
+            db.execute(
+                """
+                UPDATE player_attributes
+                SET legacy_xp_migrated = 1
+                WHERE career_id = ?
+                """,
+                (career_id,),
+            )
+            db.execute(
+                "UPDATE careers SET xp = 0 WHERE id = ?",
+                (career_id,),
             )
 
         season_row = db.execute(

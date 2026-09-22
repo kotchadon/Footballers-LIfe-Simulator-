@@ -181,8 +181,9 @@ def create_career(player_name, nationality, position):
     db.execute(
         """
         INSERT INTO player_attributes(
-            career_id, pace, shooting, passing, dribbling, defending, physical
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            career_id, pace, shooting, passing, dribbling, defending, physical,
+            legacy_xp_migrated
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, 1)
         """,
         (career_id, attributes["pace"], attributes["shooting"], attributes["passing"], attributes["dribbling"], attributes["defending"], attributes["physical"]),
     )
@@ -215,7 +216,9 @@ def get_active_career():
                leagues.name AS league_name, leagues.code AS league_code,
                leagues.tier AS league_tier, leagues.reputation AS league_reputation,
                countries.name AS country_name, countries.code AS country_code,
-               pa.pace, pa.shooting, pa.passing, pa.dribbling, pa.defending, pa.physical
+               pa.pace, pa.shooting, pa.passing, pa.dribbling, pa.defending, pa.physical,
+               pa.pace_xp, pa.shooting_xp, pa.passing_xp,
+               pa.dribbling_xp, pa.defending_xp, pa.physical_xp
         FROM careers
         JOIN clubs ON clubs.id = careers.club_id
         LEFT JOIN leagues ON leagues.id = careers.league_id
