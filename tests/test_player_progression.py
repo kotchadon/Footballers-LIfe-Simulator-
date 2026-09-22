@@ -119,3 +119,113 @@ def test_migration_fallback_uses_highest_position_weight_once(
         assert row["shooting_xp"] == 33
         assert sum(row[f"{name}_xp"] for name in ATTRIBUTE_NAMES) == 33
         assert row["legacy_xp_migrated"] == 1
+
+
+from app.progression import ATTRIBUTES, apply_attribute_xp, largest_remainder_scale, upgrade_cost
+
+
+def test_upgrade_cost_uses_attribute_band_and_potential_gap():
+    assert upgrade_cost(55, 58, 88) == 48
+    assert upgrade_cost(65, 65, 88) == 68
+    assert upgrade_cost(75, 75, 88) == 105
+    assert upgrade_cost(82, 82, 88) == 174
+    assert upgrade_cost(86, 86, 88) == 300
+
+
+def test_largest_remainder_preserves_exact_integer_total_at_cap():
+    scaled = largest_remainder_scale(
+        {"passing": 30.4, "shooting": 20.2, "dribbling": 15.1, "physical": 9.3},
+        75,
+    )
+    assert scaled == {"passing": 31, "shooting": 20, "dribbling": 15, "physical": 9}
+    assert sum(scaled.values()) == 75
+
+
+def test_largest_remainder_does_not_pad_values_below_cap():
+    scaled = largest_remainder_scale({"passing": 10.2, "shooting": 5.2}, 75)
+    assert scaled == {"passing": 10, "shooting": 5}
+    assert sum(scaled.values()) == 15
+
+
+def test_largest_remainder_caps_large_values_deterministically():
+    scaled = largest_remainder_scale(
+        {"pace": 20.0, "shooting": 30.0, "passing": 25.0, "dribbling": 20.0, "defending": 5.0, "physical": 10.0},
+        75,
+    )
+    assert sum(scaled.values()) == 75
+    assert all(value >= 0 for value in scaled.values())
+
+
+def _attrs(value=50):
+    return {name: value for name in ATTRIBUTES}
+
+
+def _meters(value=0):
+    return {name: value for name in ATTRIBUTES}
+
+
+def test_attribute_xp_crosses_exact_threshold_and_carries_remainder():
+    attributes = _attrs(58)
+    attributes["passing"] = 59
+    result = apply_attribute_xp(
+        attributes=attributes,
+        meters=_meters(),
+        gains={"passing": 58},
+        position="CAM",
+        potential=88,
+    )
+    assert result["attributes"]["passing"] == 60
+    assert result["meters"]["passing"] == 10
+    assert result["upgrades"] == [{"attribute": "passing", "from": 59, "to": 60}]
+
+
+def test_attribute_xp_can_cross_multiple_thresholds_with_changing_cost():
+    result = apply_attribute_xp(
+        attributes=_attrs(50),
+        meters=_meters(),
+        gains={"shooting": 200},
+        position="ST",
+        potential=88,
+    )
+    assert result["attributes"]["shooting"] == 54
+    assert result["meters"]["shooting"] == 8
+    assert len(result["upgrades"]) == 4
+
+
+def test_attribute_xp_keeps_unspent_meter_when_already_at_potential():
+    result = apply_attribute_xp(
+        attributes=_attrs(88),
+        meters=_meters(),
+        gains={"shooting": 500},
+        position="ST",
+        potential=88,
+    )
+    assert result["overall"] == 88
+    assert result["attributes"]["shooting"] == 88
+    assert result["meters"]["shooting"] == 500
+    assert result["upgrades"] == []
+
+
+def test_attribute_xp_stops_conversion_as_soon_as_overall_hits_potential():
+    result = apply_attribute_xp(
+        attributes=_attrs(87),
+        meters=_meters(),
+        gains={"shooting": 2000},
+        position="ST",
+        potential=88,
+    )
+    assert result["overall"] == 88
+    assert result["attributes"]["shooting"] < 99
+    assert result["meters"]["shooting"] > 0
+
+
+def test_attribute_xp_never_accepts_negative_gain():
+    result = apply_attribute_xp(
+        attributes=_attrs(50),
+        meters=_meters(7),
+        gains={"passing": -500},
+        position="CM",
+        potential=88,
+    )
+    assert result["attributes"]["passing"] == 50
+    assert result["meters"]["passing"] == 7
