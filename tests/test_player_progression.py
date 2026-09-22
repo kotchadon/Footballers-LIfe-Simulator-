@@ -229,3 +229,155 @@ def test_attribute_xp_never_accepts_negative_gain():
     )
     assert result["attributes"]["passing"] == 50
     assert result["meters"]["passing"] == 7
+
+
+# Task 3: performance-led match development.
+from copy import deepcopy
+
+
+def _task3_performance(*, minutes=9, rating=7.0, goals=0, assists=0, injured=False, **metrics):
+    values = dict.fromkeys((
+        "shots", "shots_on_target", "shot_accuracy", "xg", "key_passes",
+        "big_chances_created", "xa", "passes_attempted", "passes_completed",
+        "pass_accuracy", "dribbles_attempted", "dribbles_completed",
+        "dribble_success", "tackles_attempted", "tackles_won", "tackle_success",
+        "duels", "duels_won", "duel_win_rate", "touches", "turnovers",
+        "fouls_committed", "progressive_actions",
+    ), 0)
+    values.update(metrics)
+    values["schema_version"] = 1
+    return {
+        "minutes": minutes, "rating": rating, "goals": goals, "assists": assists,
+        "injured": injured, "injury_weeks": int(injured), "yellow_cards": 0,
+        "red_cards": 0, "motm": False, "metrics": values,
+        "events": [], "commentary": "",
+    }
+
+
+def _task3_award(performance):
+    from app import progression
+    function = getattr(progression, "match_development_xp", None)
+    assert callable(function), "Task 3 missing: match_development_xp"
+    return function(performance)
+
+
+@pytest.mark.parametrize("metrics,assists,want", [
+    ({"passes_completed": 15, "passes_attempted": 20, "pass_accuracy": 75, "key_passes": 2}, 1, 17),
+    ({"passes_completed": 17, "passes_attempted": 20, "pass_accuracy": 85}, 0, 8),
+    ({"passes_completed": 17, "passes_attempted": 20, "pass_accuracy": 84.9}, 0, 3),
+    ({"passes_completed": 18, "passes_attempted": 19, "pass_accuracy": 94.7}, 0, 4),
+    ({"passes_completed": 23, "passes_attempted": 25, "pass_accuracy": 92}, 0, 13),
+    ({"passes_completed": 23, "passes_attempted": 25, "pass_accuracy": 91.9}, 0, 10),
+    ({"passes_completed": 90, "passes_attempted": 95, "pass_accuracy": 94.7, "key_passes": 10}, 4, 28),
+])
+def test_task3_match_passing_actions_bonuses_and_cap(metrics, assists, want):
+    result = _task3_award(_task3_performance(assists=assists, **metrics))
+    assert result == {"pace": 0, "shooting": 0, "passing": want, "dribbling": 0, "defending": 0, "physical": 0}
+
+
+@pytest.mark.parametrize("shots,on_target,accuracy,goals,want", [
+    (3, 1, 33.3, 1, 15), (2, 1, 50, 0, 7), (2, 1, 49.9, 0, 4),
+    (1, 1, 100, 0, 3), (9, 9, 100, 5, 24),
+])
+def test_task3_match_shooting_actions_bonuses_and_cap(shots, on_target, accuracy, goals, want):
+    result = _task3_award(_task3_performance(goals=goals, shots=shots, shots_on_target=on_target, shot_accuracy=accuracy))
+    assert result == {"pace": 0, "shooting": want, "passing": 0, "dribbling": 0, "defending": 0, "physical": 0}
+
+
+@pytest.mark.parametrize("attempts,completed,success,progressive,want", [
+    (5, 3, 60, 0, 12), (5, 3, 59.9, 0, 8), (2, 2, 100, 0, 5),
+    (0, 0, 0, 10, 4), (9, 9, 100, 18, 20),
+])
+def test_task3_match_dribbling_bonus_progressive_actions_and_cap(attempts, completed, success, progressive, want):
+    result = _task3_award(_task3_performance(dribbles_attempted=attempts, dribbles_completed=completed, dribble_success=success, progressive_actions=progressive))
+    assert result["dribbling"] == want
+
+
+@pytest.mark.parametrize("attempts,won,success,duels,want", [
+    (10, 7, 70, 0, 22), (3, 2, 70, 1, 11), (3, 2, 69.9, 1, 7),
+    (1, 1, 100, 0, 3), (0, 0, 0, 5, 5), (10, 10, 100, 15, 22),
+])
+def test_task3_match_defending_actions_bonus_and_cap(attempts, won, success, duels, want):
+    result = _task3_award(_task3_performance(tackles_attempted=attempts, tackles_won=won, tackle_success=success, duels_won=duels, duels=duels))
+    assert result["defending"] == want
+
+
+@pytest.mark.parametrize("minutes,duels,want", [(9, 0, 0), (10, 0, 1), (59, 0, 5), (89, 0, 8), (90, 0, 11), (30, 5, 6), (90, 15, 15)])
+def test_task3_match_physical_minutes_duels_and_cap(minutes, duels, want):
+    result = _task3_award(_task3_performance(minutes=minutes, duels_won=duels, duels=duels))
+    assert result["physical"] == want
+
+
+@pytest.mark.parametrize("minutes,progressive,dribbles,want", [(59, 0, 0, 0), (60, 0, 0, 2), (9, 4, 2, 5), (90, 18, 9, 12)])
+def test_task3_match_pace_actions_minutes_and_cap(minutes, progressive, dribbles, want):
+    result = _task3_award(_task3_performance(minutes=minutes, progressive_actions=progressive, dribbles_attempted=dribbles, dribbles_completed=dribbles))
+    assert result["pace"] == want
+
+
+@pytest.mark.parametrize("rating,multiplier,want", [(3.5, .9, 9), (6.49, .9, 9), (6.5, 1., 10), (7.49, 1., 10), (7.5, 1.1, 11), (8.49, 1.1, 11), (8.5, 1.2, 12), (10., 1.2, 12)])
+def test_task3_rating_boundaries_amplify_only_earned_xp(rating, multiplier, want):
+    from app import progression
+    function = getattr(progression, "rating_multiplier", None)
+    assert callable(function), "Task 3 missing: rating_multiplier"
+    assert function(rating) == multiplier
+    result = _task3_award(_task3_performance(rating=rating, passes_attempted=50, passes_completed=50, pass_accuracy=0))
+    assert result == {"pace": 0, "shooting": 0, "passing": want, "dribbling": 0, "defending": 0, "physical": 0}
+
+
+def test_task3_caps_each_category_before_rating_then_scales_to_75():
+    performance = _task3_performance(minutes=90, rating=9, goals=5, assists=5,
+        shots=9, shots_on_target=9, shot_accuracy=100,
+        passes_attempted=95, passes_completed=95, pass_accuracy=100, key_passes=10,
+        dribbles_attempted=9, dribbles_completed=9, dribble_success=100,
+        tackles_attempted=10, tackles_won=10, tackle_success=100,
+        duels=15, duels_won=15, progressive_actions=18)
+    # Spec: cap, multiply, round each category, then scale (14,29,34,24,26,18).
+    want = {"pace": 7, "shooting": 15, "passing": 18, "dribbling": 12, "defending": 14, "physical": 9}
+    assert _task3_award(performance) == want
+    assert _task3_award(performance) == want
+    assert sum(want.values()) == 75
+
+
+def test_task3_rounds_each_multiplied_category_before_global_scaling():
+    result = _task3_award(_task3_performance(rating=8.5, dribbles_completed=1, dribbles_attempted=1, passes_completed=2))
+    assert result == {"pace": 1, "shooting": 0, "passing": 0, "dribbling": 3, "defending": 0, "physical": 0}
+
+
+@pytest.mark.parametrize("minutes", [0, -1])
+def test_task3_no_minutes_means_no_match_xp_even_with_actions(minutes):
+    result = _task3_award(_task3_performance(minutes=minutes, rating=10, goals=5, assists=5, passes_completed=80))
+    assert result == dict.fromkeys(("pace", "shooting", "passing", "dribbling", "defending", "physical"), 0)
+
+
+def test_task3_injury_retains_earned_xp_and_input_is_unchanged():
+    performance = _task3_performance(minutes=30, goals=1, shots=1, shots_on_target=1, shot_accuracy=100, injured=True)
+    before = deepcopy(performance)
+    result = _task3_award(performance)
+    assert result == {"pace": 0, "shooting": 13, "passing": 0, "dribbling": 0, "defending": 0, "physical": 3}
+    assert performance == before
+
+
+def test_task3_low_rating_and_negative_action_counts_never_remove_xp():
+    result = _task3_award(_task3_performance(rating=3.5, goals=-2, assists=-1, passes_completed=-10, shots=-5, shots_on_target=-1, key_passes=-2, dribbles_completed=-1, tackles_won=-1, duels_won=-1, progressive_actions=-1))
+    assert result == dict.fromkeys(("pace", "shooting", "passing", "dribbling", "defending", "physical"), 0)
+
+
+def test_task3_missing_minutes_never_assumes_full_match():
+    performance = _task3_performance(goals=1, shots=1)
+    del performance["minutes"]
+    assert sum(_task3_award(performance).values()) == 0
+
+
+def test_task3_real_engine_metrics_with_authoritative_minutes():
+    import random
+    from app.engine import simulate_player_performance
+    performance = simulate_player_performance(player_name="Advay", position="CAM", overall=58, fitness=90, morale=70, team_goals=2, opponent_goals=1, minutes=78, rng=random.Random(42))
+    performance["minutes"] = 78
+    before = deepcopy(performance)
+    result = _task3_award(performance)
+    assert set(result) == {"pace", "shooting", "passing", "dribbling", "defending", "physical"}
+    assert all(type(value) is int and value >= 0 for value in result.values())
+    assert 0 < sum(result.values()) <= 75
+    assert result["passing"] > 0
+    assert result["physical"] > 0
+    assert performance == before

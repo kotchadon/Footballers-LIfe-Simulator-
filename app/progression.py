@@ -114,3 +114,69 @@ def apply_attribute_xp(*, attributes: dict[str, int], meters: dict[str, int], ga
         "overall": calculate_overall(current_attributes, position, potential),
         "upgrades": upgrades,
     }
+
+
+def rating_multiplier(rating: float) -> float:
+    if rating < 6.5:
+        return 0.90
+    if rating < 7.5:
+        return 1.00
+    if rating < 8.5:
+        return 1.10
+    return 1.20
+
+
+def match_development_xp(performance: dict) -> dict[str, int]:
+    """Derive XP without mutating the authoritative performance snapshot.
+
+    The caller must attach actual minutes: the simulator's return value does
+    not include them. Missing/non-positive minutes never earn match XP.
+    """
+    minutes = max(0, int(performance.get("minutes", 0)))
+    if minutes == 0:
+        return dict.fromkeys(ATTRIBUTES, 0)
+
+    metrics = performance.get("metrics", {})
+
+    def metric(name: str) -> float:
+        return max(0.0, float(metrics.get(name, 0)))
+
+    goals = max(0, int(performance.get("goals", 0)))
+    assists = max(0, int(performance.get("assists", 0)))
+    completed_dribbles = metric("dribbles_completed")
+    duels_won = metric("duels_won")
+    progressive = metric("progressive_actions")
+
+    passing = metric("passes_completed") * 0.20 + metric("key_passes") * 3 + assists * 8
+    if metric("passes_attempted") >= 20:
+        if metric("pass_accuracy") >= 85:
+            passing += 5
+        if metric("pass_accuracy") >= 92:
+            passing += 3
+
+    shooting = metric("shots") + metric("shots_on_target") * 2 + goals * 10
+    if metric("shots") >= 2 and metric("shot_accuracy") >= 50:
+        shooting += 3
+
+    dribbling = completed_dribbles * 2.5 + progressive * 0.35
+    if metric("dribbles_attempted") >= 3 and metric("dribble_success") >= 60:
+        dribbling += 4
+
+    defending = metric("tackles_won") * 3 + duels_won
+    if metric("tackles_attempted") >= 2 and metric("tackle_success") >= 70:
+        defending += 4
+
+    physical = minutes // 10 + duels_won * 0.6 + (2 if minutes >= 90 else 0)
+    pace = progressive + completed_dribbles * 0.5 + (2 if minutes >= 60 else 0)
+    capped = {
+        "pace": min(12, pace),
+        "shooting": min(24, shooting),
+        "passing": min(28, passing),
+        "dribbling": min(20, dribbling),
+        "defending": min(22, defending),
+        "physical": min(15, physical),
+    }
+    multiplier = rating_multiplier(float(performance.get("rating", 6.5)))
+    # Approved spec: round each multiplied category before the global cap.
+    multiplied = {name: round(value * multiplier) for name, value in capped.items()}
+    return largest_remainder_scale(multiplied, 75)
