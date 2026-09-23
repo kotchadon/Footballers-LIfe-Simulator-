@@ -59,7 +59,7 @@
     </div>
 
     <div class="career-hero-v5__status">
-      <span>{{ training_plan.label }}</span>
+      <span id="hero-training-pill">{{ training_plan.label }}</span>
       <span>{{ career.squad_level|replace('_',' ')|title }}</span>
       {% if career.injured_weeks > 0 %}<span>Injured · {{ career.injured_weeks }}w</span>{% endif %}
       {% if career.suspended_matches > 0 %}<span>Suspended · {{ career.suspended_matches }}</span>{% endif %}
@@ -139,19 +139,37 @@
   </section>
 </div>
 
-<section class="panel development-panel" id="development" data-training-endpoint="{{ url_for('main.training_plan_api') }}">
+<section class="panel development-panel" id="development" data-training-locked="{{ 'true' if training_plan.locked else 'false' }}" data-training-endpoint="{{ url_for('main.training_plan_api') }}">
   {% if active_match %}<div class="active-match-notice">Training is locked until the sealed match is completed.</div>{% endif %}
   <div class="panel-heading"><div><p class="eyebrow">DEVELOPMENT PLAN</p><h2>Set a weekly focus, not a click farm.</h2><p class="muted">Development XP is earned through matches and free weeks. Recovery plans prioritise fitness and stress control.</p></div><div class="plan-badge"><small>CURRENT</small><strong id="training-plan-label">{{ training_plan.label }}</strong></div></div>
   <div class="development-layout">
     <div>
       <div class="attribute-grid">
-      {% for focus, short, value, key in [('pace','PAC',career.pace,'1'),('shooting','SHO',career.shooting,'2'),('passing','PAS',career.passing,'3'),('dribbling','DRI',career.dribbling,'4'),('defending','DEF',career.defending,'5'),('physical','PHY',career.physical,'6')] %}
-        <button type="button" class="attribute-card {% if training_plan.focus == focus %}selected{% endif %}" data-training-focus="{{ focus }}" data-shortcut="{{ key }}" {% if active_match %}disabled{% endif %}><span>{{ short }}</span><strong>{{ value }}</strong><small>{{ key }} · Focus</small></button>
+      {% for focus, short, key in [('pace','PAC','1'),('shooting','SHO','2'),('passing','PAS','3'),('dribbling','DRI','4'),('defending','DEF','5'),('physical','PHY','6')] %}
+        {% set progress = training_plan.attributes[focus] %}
+        {% set cap_label = 'Attribute limit reached' if progress.value >= 99 else 'Potential reached' %}
+        <article class="attribute-development-card">
+        <button type="button" class="attribute-card {% if training_plan.focus == focus %}selected{% endif %}" data-training-focus="{{ focus }}" data-shortcut="{{ key }}" aria-pressed="{{ 'true' if training_plan.focus == focus else 'false' }}" aria-label="Train {{ focus }}" aria-describedby="{{ focus }}-progress-text" {% if training_plan.locked %}disabled{% endif %}>
+          <span>{{ short }}</span><strong>{{ progress.value }}</strong><small>{{ key }} · Focus</small>
+        </button>
+        <div class="attribute-meter-detail">
+          <span class="attribute-meter" data-attribute-meter="{{ focus }}" role="progressbar" aria-label="{{ focus|title }} development" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ progress.percent }}" aria-valuetext="{% if progress.capped %}{{ progress.xp }} XP banked. {{ cap_label }}.{% else %}{{ progress.xp }} of {{ progress.cost }} XP to {{ progress.next_value }}{% endif %}"><span class="attribute-meter-fill" style="width:{{ progress.percent }}%"></span></span>
+          <small class="attribute-progress-text" id="{{ focus }}-progress-text">{% if progress.capped %}{{ cap_label }} · {{ progress.xp }} XP banked{% else %}{{ progress.xp }} / {{ progress.cost }} XP to {{ progress.next_value }}{% endif %}</small>
+          <small class="attribute-shortcut">{{ progress.percent }}%</small>
+        </div>
+        </article>
       {% endfor %}
       </div>
-      <button type="button" class="recovery-card {% if training_plan.focus == 'recovery' %}selected{% endif %}" data-training-focus="recovery" data-shortcut="R" {% if active_match %}disabled{% endif %}><span><b>Recovery plan</b><small>Fitness and stress priority</small></span><kbd>R</kbd></button>
+      <button type="button" class="recovery-card {% if training_plan.focus == 'balanced' %}selected{% endif %}" data-training-focus="balanced" aria-pressed="{{ 'true' if training_plan.focus == 'balanced' else 'false' }}" {% if training_plan.locked %}disabled{% endif %}><span><b>Balanced development</b><small>Train across your position's strengths</small></span></button>
+      <button type="button" class="recovery-card {% if training_plan.focus == 'recovery' %}selected{% endif %}" data-training-focus="recovery" data-shortcut="R" aria-pressed="{{ 'true' if training_plan.focus == 'recovery' else 'false' }}" {% if training_plan.locked %}disabled{% endif %}><span><b>Recovery plan</b><small>Fitness and stress priority</small></span><kbd>R</kbd></button>
     </div>
-    <aside class="plan-console"><p class="eyebrow">WEEKLY PLAN</p><h3 id="training-plan-title">{{ training_plan.label }}</h3><p id="training-plan-description">{{ training_plan.description }}</p><div class="xp-track"><span id="xp-track-fill" style="width:{{ training_plan.xp }}%"></span></div><div class="xp-row"><span>Next breakthrough</span><strong id="xp-progress">{{ training_plan.xp }}/100 XP</strong></div></aside>
+    <aside class="plan-console"><p class="eyebrow">WEEKLY PLAN</p><h3 id="training-plan-title">{{ training_plan.label }}</h3><p id="training-plan-description">{{ training_plan.description }}</p>
+      <div class="training-preview" aria-live="polite" aria-atomic="true">
+        <h4>Training XP preview</h4>
+        <dl class="training-preview-grid">{% for focus, short in [('pace','PAC'),('shooting','SHO'),('passing','PAS'),('dribbling','DRI'),('defending','DEF'),('physical','PHY')] %}<div><dt><abbr title="{{ focus|title }}">{{ short }}</abbr></dt><dd data-training-preview="{{ focus }}">+{{ training_plan.weekly_preview[focus] }} XP</dd></div>{% endfor %}</dl>
+        <p class="training-preview-note" id="training-preview-note">{{ training_plan.preview_note }}</p>
+      </div>
+    </aside>
   </div>
 </section>
 

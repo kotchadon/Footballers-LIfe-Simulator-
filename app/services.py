@@ -8,7 +8,7 @@ import uuid
 from datetime import datetime, timezone
 
 from .db import get_db
-from .progression import ATTRIBUTES, apply_attribute_xp, match_development_xp, training_development_xp
+from .progression import ATTRIBUTES, apply_attribute_xp, match_development_xp, training_development_xp, upgrade_cost
 from .match_visuals import build_visual_plan, visual_event_metadata
 from .calendar_engine import generate_season_calendar, get_calendar, get_week_context
 from .economy import (
@@ -1223,19 +1223,53 @@ def play_next_week(career_id, seed=None):
     }
 
 def get_training_plan(career_id):
-    career = get_db().execute(
-        "SELECT training_focus, xp, fitness, injured_weeks FROM careers WHERE id = ?",
+    """Present persisted progress and a no-match estimate, never a sealed result."""
+    db = get_db()
+    career = db.execute(
+        """
+        SELECT c.*, pa.pace, pa.shooting, pa.passing, pa.dribbling, pa.defending, pa.physical,
+               pa.pace_xp, pa.shooting_xp, pa.passing_xp, pa.dribbling_xp, pa.defending_xp, pa.physical_xp
+        FROM careers c JOIN player_attributes pa ON pa.career_id=c.id
+        WHERE c.id=?
+        """,
         (career_id,),
     ).fetchone()
     if career is None:
         return None
     focus = career["training_focus"] if career["training_focus"] in TRAINING_FOCUS else "balanced"
+    attributes = {}
+    for name in ATTRIBUTES:
+        value, xp = career[name], career[f"{name}_xp"]
+        cost = upgrade_cost(value, career["overall"], career["potential"])
+        capped = value >= 99 or career["overall"] >= career["potential"]
+        attributes[name] = {
+            "value": value, "xp": xp, "cost": cost,
+            "percent": max(0, min(100, xp * 100 // cost)),
+            "capped": capped, "next_value": None if capped else value + 1,
+        }
+    settled = _week_has_settled_match(db, career)
+    preview = dict.fromkeys(ATTRIBUTES, 0) if settled else training_development_xp(
+        focus=focus, position=career["position"], season_phase=career["season_phase"],
+        minutes=0, unavailable_injured=career["injured_weeks"] > 0,
+    )
+    if settled:
+        status, note = "settled", "This week's training has already been awarded."
+    elif career["injured_weeks"] > 0:
+        status, note = "injured", "Injury recovery: no training XP this week."
+    elif focus == "recovery":
+        status, note = "recovery", "Recovery improves fitness and stress; no training XP."
+    else:
+        status = "estimate"
+        note = "No-match estimate. Match minutes reduce training XP; match-action XP is earned separately."
+        if career["season_phase"] == "preseason":
+            note += " Includes the preseason training bonus."
     return {
-        "focus": focus,
-        "xp": career["xp"],
-        "fitness": career["fitness"],
-        "injured_weeks": career["injured_weeks"],
-        **TRAINING_FOCUS[focus],
+        "focus": focus, "label": TRAINING_FOCUS[focus]["label"],
+        "description": TRAINING_FOCUS[focus]["description"],
+        "fitness": career["fitness"], "injured_weeks": career["injured_weeks"],
+        "attributes": attributes, "weekly_preview": preview,
+        "preview_status": status, "preview_note": note,
+        "locked": get_active_match_session(career_id) is not None,
     }
 
 

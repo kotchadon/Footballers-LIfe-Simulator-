@@ -363,7 +363,7 @@
     if (!panel || !button) return;
     const endpoint = panel.dataset.trainingEndpoint;
     const focus = button.dataset.trainingFocus;
-    if (!endpoint || !focus || button.disabled) return;
+    if (!endpoint || !focus || button.disabled || panel.dataset.trainingLocked === "true") return;
 
     document.querySelectorAll("[data-training-focus]").forEach((item) => item.disabled = true);
     button.classList.add("loading");
@@ -375,23 +375,28 @@
         body: JSON.stringify({focus}),
       });
       const data = await response.json();
+      if (data.plan?.locked) panel.dataset.trainingLocked = "true";
       if (!response.ok || !data.ok) throw new Error(data.message || "Could not update training plan.");
 
       document.querySelectorAll("[data-training-focus]").forEach((item) => {
-        item.classList.toggle("selected", item.dataset.trainingFocus === data.plan.focus);
+        const selected = item.dataset.trainingFocus === data.plan.focus;
+        item.classList.toggle("selected", selected);
+        item.setAttribute("aria-pressed", String(selected));
       });
       document.getElementById("training-plan-label").textContent = data.plan.label;
       document.getElementById("training-plan-title").textContent = data.plan.label;
       document.getElementById("training-plan-description").textContent = data.plan.description;
-      document.getElementById("hero-training-pill").textContent = `Plan · ${data.plan.label}`;
-      document.getElementById("xp-progress").textContent = `${data.plan.xp}/100 XP`;
-      document.getElementById("xp-track-fill").style.width = `${data.plan.xp}%`;
+      document.getElementById("hero-training-pill").textContent = data.plan.label;
+      panel.querySelectorAll("[data-training-preview]").forEach((item) => {
+        item.textContent = `+${data.plan.weekly_preview[item.dataset.trainingPreview]} XP`;
+      });
+      document.getElementById("training-preview-note").textContent = data.plan.preview_note;
       showToast(data.message);
     } catch (error) {
       showToast(error.message || "Training plan failed.", true);
     } finally {
       button.classList.remove("loading");
-      document.querySelectorAll("[data-training-focus]").forEach((item) => item.disabled = false);
+      document.querySelectorAll("[data-training-focus]").forEach((item) => item.disabled = panel.dataset.trainingLocked === "true");
     }
   }
 

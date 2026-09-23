@@ -542,3 +542,128 @@ def test_task5_snapshot_already_trained_week_has_no_second_training_award(tmp_pa
     development = snapshot['post_match']['development']
     assert sum(development['training_xp'].values()) == 0
     assert sum(development['match_xp'].values()) > 0
+
+
+def _task6_career(tmp_path, *, focus="passing", phase="competitive", injured=0):
+    app = make_app(tmp_path)
+    with app.app_context():
+        career_id = create_career("Advay", "India", "CAM")
+        db = get_db()
+        db.execute("UPDATE careers SET overall=58,potential=88,training_focus=?,season_phase=?,calendar_week=6,injured_weeks=? WHERE id=?", (focus, phase, injured, career_id))
+        db.execute("UPDATE player_attributes SET pace=58,shooting=58,passing=58,dribbling=58,defending=58,physical=58,pace_xp=14,shooting_xp=0,passing_xp=47,dribbling_xp=9,defending_xp=0,physical_xp=4 WHERE career_id=?", (career_id,))
+        db.commit()
+    return app, career_id
+
+
+def test_task6_training_plan_exposes_persisted_meters_and_does_not_mutate(tmp_path):
+    from app.services import get_training_plan
+    app, career_id = _task6_career(tmp_path)
+    with app.app_context():
+        before = dict(get_active_career())
+        plan = get_training_plan(career_id)
+        assert set(plan["attributes"]) == set(ATTRIBUTE_NAMES)
+        for name, xp, percent in zip(ATTRIBUTE_NAMES, (14, 0, 47, 9, 0, 4), (29, 0, 97, 18, 0, 8)):
+            assert plan["attributes"][name] == {"value":58,"xp":xp,"cost":48,"percent":percent,"capped":False,"next_value":59}
+        assert plan["weekly_preview"] == dict(zip(ATTRIBUTE_NAMES,(0,0,20,5,0,5)))
+        assert "xp" not in plan and "weekly_xp" not in plan
+        assert dict(get_active_career()) == before
+        assert get_training_plan(-1) is None
+
+
+@pytest.mark.parametrize("value,overall,potential,xp,cost,percent,capped,next_value", [
+    (58,58,88,0,48,0,False,59),
+    (61,61,88,34,60,56,False,62),
+    (70,70,88,47,94,50,False,71),
+    (85,85,90,120,240,50,False,86),
+    (58,58,88,200,48,100,False,59),
+    (99,70,88,500,252,100,True,None),
+    (58,58,58,120,90,100,True,None),
+])
+def test_task6_meter_cost_rounding_overflow_and_caps(tmp_path,value,overall,potential,xp,cost,percent,capped,next_value):
+    from app.services import get_training_plan
+    app, career_id = _task6_career(tmp_path)
+    with app.app_context():
+        db=get_db()
+        db.execute("UPDATE careers SET overall=?,potential=? WHERE id=?",(overall,potential,career_id))
+        db.execute("UPDATE player_attributes SET passing=?,passing_xp=? WHERE career_id=?",(value,xp,career_id))
+        db.commit()
+        assert get_training_plan(career_id)["attributes"]["passing"] == dict(value=value,xp=xp,cost=cost,percent=percent,capped=capped,next_value=next_value)
+
+
+@pytest.mark.parametrize("focus,want", [
+    ("pace",(20,0,0,5,0,5)), ("shooting",(0,20,0,5,0,5)),
+    ("passing",(0,0,20,5,0,5)), ("dribbling",(5,0,5,20,0,0)),
+    ("defending",(0,0,5,0,20,5)), ("physical",(5,0,0,0,5,20)),
+    ("balanced",(3,6,8,8,1,4)), ("recovery",(0,0,0,0,0,0)),
+])
+def test_task6_api_focus_changes_preview_without_awarding_development(tmp_path,focus,want):
+    app, career_id = _task6_career(tmp_path)
+    with app.app_context(): before=dict(get_active_career())
+    response=app.test_client().post("/api/training-plan",json={"focus":focus})
+    assert response.status_code == 200
+    plan=response.get_json()["plan"]
+    assert plan["weekly_preview"] == dict(zip(ATTRIBUTE_NAMES,want))
+    assert plan["focus"] == focus
+    assert plan["preview_status"] == ("recovery" if focus=="recovery" else "estimate")
+    with app.app_context():
+        after=dict(get_active_career())
+        for name in (*ATTRIBUTE_NAMES,*(f"{name}_xp" for name in ATTRIBUTE_NAMES),"xp","overall","fitness","morale","stress","calendar_week"):
+            assert after[name] == before[name]
+
+
+@pytest.mark.parametrize("phase,injured,focus,total,status", [
+    ("preseason",0,"passing",38,"estimate"),
+    ("competitive",2,"passing",0,"injured"),
+    ("preseason",0,"recovery",0,"recovery"),
+])
+def test_task6_preview_respects_phase_and_availability(tmp_path,phase,injured,focus,total,status):
+    from app.services import get_training_plan
+    app, career_id=_task6_career(tmp_path,focus=focus,phase=phase,injured=injured)
+    with app.app_context():
+        plan=get_training_plan(career_id)
+        assert sum(plan["weekly_preview"].values()) == total
+        assert plan["preview_status"] == status
+
+
+def test_task6_active_match_plan_exposes_only_current_state_and_remains_locked(tmp_path):
+    from app.services import get_training_plan,prepare_next_match
+    app, career_id=_task6_career(tmp_path)
+    with app.app_context():
+        before=get_training_plan(career_id)
+        session=prepare_next_match(career_id,seed=4)
+        assert session is not None
+        during=get_training_plan(career_id)
+        assert during["locked"] is True
+        assert during["attributes"] == before["attributes"]
+        assert during["weekly_preview"] == before["weekly_preview"]
+    response=app.test_client().post("/api/training-plan",json={"focus":"shooting"})
+    assert response.status_code == 409
+    plan=response.get_json()["plan"]
+    assert plan["locked"] is True and plan["focus"] == "passing"
+    assert set(plan) == {"focus","label","description","fitness","injured_weeks","attributes","weekly_preview","preview_status","preview_note","locked"}
+
+
+def test_task6_settled_week_preview_is_zero_then_resets_next_week(tmp_path):
+    from app.services import get_training_plan,prepare_next_match,complete_match_session,advance_calendar_week
+    app, career_id=_task6_career(tmp_path)
+    with app.app_context():
+        session=prepare_next_match(career_id,seed=4)
+        ok,message,_=complete_match_session(session['public_id'],career_id,allow_skip=True)
+        assert ok,message
+        plan=get_training_plan(career_id)
+        assert plan["preview_status"] == "settled"
+        assert sum(plan["weekly_preview"].values()) == 0
+        ok,message,_=advance_calendar_week(career_id,seed=7)
+        assert ok,message
+        plan=get_training_plan(career_id)
+        assert plan["preview_status"] == "estimate"
+        assert sum(plan["weekly_preview"].values()) == 30
+
+
+def test_task6_invalid_focus_preserves_state_and_returns_no_plan(tmp_path):
+    from app.services import get_training_plan
+    app, career_id=_task6_career(tmp_path)
+    with app.app_context(): before=get_training_plan(career_id)
+    response=app.test_client().post('/api/training-plan',json={'focus':'<script>alert(1)</script>'})
+    assert response.status_code == 400 and response.get_json()['plan'] is None
+    with app.app_context(): assert get_training_plan(career_id) == before
