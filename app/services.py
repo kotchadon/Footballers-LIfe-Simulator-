@@ -935,6 +935,47 @@ def _build_final_analysis(snapshot):
     )
 
 
+def _public_settled_development(development):
+    """Return only post-settlement progression details safe for the final report."""
+    if not isinstance(development, dict) or int(development.get("schema_version", 0) or 0) != 2:
+        return None
+
+    def clean_map(key):
+        source = development.get(key)
+        if not isinstance(source, dict):
+            source = {}
+        return {
+            name: max(0, int(source.get(name, 0) or 0))
+            for name in ATTRIBUTES
+        }
+
+    upgrades = []
+    for item in development.get("upgrades", []):
+        if not isinstance(item, dict):
+            continue
+        attribute = item.get("attribute")
+        if attribute not in ATTRIBUTES:
+            continue
+        before = int(item.get("from", 0) or 0)
+        after = int(item.get("to", before) or before)
+        upgrades.append({
+            "attribute": attribute,
+            "from": before,
+            "to": after,
+        })
+
+    return {
+        "schema_version": 2,
+        "match_xp": clean_map("match_xp"),
+        "training_xp": clean_map("training_xp"),
+        "meters_after": clean_map("meters_after"),
+        "attributes": clean_map("attributes"),
+        "overall_before": int(development.get("overall_before", development.get("overall", 0)) or 0),
+        "overall": int(development.get("overall", 0) or 0),
+        "upgrades": upgrades,
+    }
+
+
 def _completion_payload(snapshot, analysis, session_status="completed"):
     fixture = snapshot["fixture"]
     performance = snapshot["performance"]
@@ -945,6 +986,7 @@ def _completion_payload(snapshot, analysis, session_status="completed"):
         "player_team_is_home": fixture["player_team_is_home"],
         "week_results": snapshot["week_results"],
         "remaining_events": performance["events"],
+        "development": _public_settled_development(post_match.get("development")),
         "report": {
             "selection_status": performance["selection_status"],
             "minutes": performance["minutes"],

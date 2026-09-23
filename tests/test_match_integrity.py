@@ -357,3 +357,121 @@ def test_task5_live_payloads_never_expose_sealed_progression(tmp_path):
             encoded=json.dumps(data)
             for secret in ('meters_after','total_xp','attributes_before','match_xp'):
                 assert secret not in encoded
+
+
+
+def test_task7_completion_exposes_only_settled_development(tmp_path):
+    app = make_app(tmp_path)
+    with app.app_context():
+        career_id = create_career("Advay", "India", "CAM")
+        advance_to_first_fixture(career_id)
+        session = prepare_next_match(career_id, seed=1707)
+        snapshot = json.loads(session["simulation_json"])
+        sealed = snapshot["post_match"]["development"]
+        assert sealed["schema_version"] == 2
+
+        ok, message, payload = complete_match_session(
+            session["public_id"], career_id, allow_skip=True
+        )
+        assert ok, message
+        public = payload["development"]
+
+        assert set(public) == {
+            "schema_version",
+            "match_xp",
+            "training_xp",
+            "meters_after",
+            "attributes",
+            "overall_before",
+            "overall",
+            "upgrades",
+        }
+        assert public["schema_version"] == 2
+        assert public["match_xp"] == sealed["match_xp"]
+        assert public["training_xp"] == sealed["training_xp"]
+        assert public["meters_after"] == sealed["meters_after"]
+        assert public["attributes"] == sealed["attributes"]
+        assert public["overall_before"] == sealed["overall_before"]
+        assert public["overall"] == sealed["overall"]
+        assert public["upgrades"] == sealed["upgrades"]
+        for hidden in ("meters_before", "attributes_before", "total_xp", "potential_before"):
+            assert hidden not in public
+        assert payload["report"]["development_summary"]
+
+
+def test_task7_completion_retry_returns_identical_development(tmp_path):
+    app = make_app(tmp_path)
+    with app.app_context():
+        career_id = create_career("Advay", "India", "RW")
+        advance_to_first_fixture(career_id)
+        session = prepare_next_match(career_id, seed=1708)
+
+        ok, message, first = complete_match_session(
+            session["public_id"], career_id, allow_skip=True
+        )
+        assert ok, message
+        state_after_first = dict(get_active_career())
+
+        ok, message, second = complete_match_session(
+            session["public_id"], career_id, allow_skip=True
+        )
+        assert ok, message
+        assert second["development"] == first["development"]
+        assert second["report"]["development_summary"] == first["report"]["development_summary"]
+        assert dict(get_active_career()) == state_after_first
+
+
+def test_task7_live_advance_payload_never_exposes_settled_development(tmp_path):
+    app = make_app(tmp_path)
+    with app.app_context():
+        career_id = create_career("Advay", "India", "LW")
+        advance_to_first_fixture(career_id)
+        session = prepare_next_match(career_id, seed=1709)
+
+        view = get_match_session_view(session["public_id"], career_id)
+        ok, message, event = advance_match_session(
+            session["public_id"], career_id, 0
+        )
+        assert ok, message
+
+        for data in (view, event):
+            encoded = json.dumps(data)
+            assert '"development"' not in encoded
+            for secret in (
+                "match_xp",
+                "training_xp",
+                "meters_after",
+                "attributes_before",
+                "total_xp",
+            ):
+                assert secret not in encoded
+
+
+def test_task7_legacy_prepared_match_uses_summary_fallback_without_crashing(tmp_path):
+    app = make_app(tmp_path)
+    with app.app_context():
+        career_id = create_career("Advay", "India", "CM")
+        advance_to_first_fixture(career_id)
+        session = prepare_next_match(career_id, seed=1710)
+        snapshot = json.loads(session["simulation_json"])
+        sealed = snapshot["post_match"]["development"]
+        snapshot["post_match"]["development"] = {
+            "attributes": dict(sealed["attributes_before"]),
+            "overall": sealed["overall_before"],
+            "xp": 17,
+            "upgrades": ["passing"],
+        }
+
+        db = get_db()
+        db.execute(
+            "UPDATE match_sessions SET simulation_json=? WHERE id=?",
+            (json.dumps(snapshot), session["id"]),
+        )
+        db.commit()
+
+        ok, message, payload = complete_match_session(
+            session["public_id"], career_id, allow_skip=True
+        )
+        assert ok, message
+        assert payload["development"] is None
+        assert payload["report"]["development_summary"]

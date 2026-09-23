@@ -757,6 +757,110 @@ if (timeline.querySelector(`[data-sequence="${item.sequence}"]`)) return;
       return article;
     }
 
+    const DEVELOPMENT_ORDER = ["pace", "shooting", "passing", "dribbling", "defending", "physical"];
+    const DEVELOPMENT_SHORT = {
+      pace: "PAC",
+      shooting: "SHO",
+      passing: "PAS",
+      dribbling: "DRI",
+      defending: "DEF",
+      physical: "PHY",
+    };
+
+    function buildDevelopmentReport(payload) {
+      const report = payload.report || {};
+      const data = payload.development;
+      const panel = el("section", "panel post-match-development");
+      panel.append(
+        el("p", "eyebrow", "PLAYER DEVELOPMENT"),
+        el("h2", "", "What this matchweek changed"),
+      );
+
+      if (!data || Number(data.schema_version) !== 2) {
+        panel.append(el("p", "muted", report.development_summary || "Development settled."));
+        return panel;
+      }
+
+      const matchXp = data.match_xp || {};
+      const trainingXp = data.training_xp || {};
+      const matchEntries = DEVELOPMENT_ORDER
+        .map((name) => [name, Math.max(0, Number(matchXp[name] || 0))])
+        .filter(([, value]) => value > 0);
+      const trainingEntries = DEVELOPMENT_ORDER
+        .map((name) => [name, Math.max(0, Number(trainingXp[name] || 0))])
+        .filter(([, value]) => value > 0);
+      const matchTotal = matchEntries.reduce((total, [, value]) => total + value, 0);
+      const trainingTotal = trainingEntries.reduce((total, [, value]) => total + value, 0);
+
+      const totals = el("div", "offer-chips");
+      totals.append(
+        el("span", "", `Match XP: +${matchTotal}`),
+        el("span", "", `Training XP: +${trainingTotal}`),
+      );
+      const overallBefore = Number(data.overall_before || 0);
+      const overallAfter = Number(data.overall || 0);
+      if (overallAfter > 0) {
+        totals.append(
+          el(
+            "span",
+            "",
+            overallBefore > 0 && overallAfter !== overallBefore
+              ? `OVR: ${overallBefore} → ${overallAfter}`
+              : `OVR: ${overallAfter}`,
+          ),
+        );
+      }
+      panel.append(totals);
+
+      function appendXpBlock(label, entries, emptyText) {
+        panel.append(el("p", "eyebrow", label));
+        if (!entries.length) {
+          panel.append(el("p", "muted", emptyText));
+          return;
+        }
+        const grid = el("div", "match-stat-grid");
+        entries.forEach(([name, value]) => {
+          const box = el("div");
+          box.append(
+            el("span", "", DEVELOPMENT_SHORT[name] || name.toUpperCase()),
+            el("strong", "", `+${value} XP`),
+          );
+          grid.append(box);
+        });
+        panel.append(grid);
+      }
+
+      appendXpBlock("MATCH XP", matchEntries, "No match XP earned.");
+      appendXpBlock("TRAINING XP", trainingEntries, "No training XP added this matchweek.");
+
+      panel.append(el("p", "eyebrow", "BREAKTHROUGHS"));
+      const upgrades = Array.isArray(data.upgrades) ? data.upgrades : [];
+      if (upgrades.length) {
+        const list = el("div", "report-list");
+        upgrades.forEach((upgrade) => {
+          const name = DEVELOPMENT_SHORT[upgrade.attribute] || String(upgrade.attribute || "").toUpperCase();
+          const article = el("article", "analysis-item compact");
+          article.append(
+            el("h3", "", `${name} ${upgrade.from} → ${upgrade.to}`),
+            el("p", "", "Attribute upgrade converted from banked development XP."),
+          );
+          list.append(article);
+        });
+        panel.append(list);
+      } else {
+        panel.append(el("p", "muted", "No attribute crossed a threshold. XP stays banked toward the next breakthrough."));
+      }
+
+      panel.append(el("p", "eyebrow", "BANKED XP AFTER SETTLEMENT"));
+      const banked = el("div", "offer-chips");
+      DEVELOPMENT_ORDER.forEach((name) => {
+        const value = Math.max(0, Number(data.meters_after?.[name] || 0));
+        banked.append(el("span", "", `${DEVELOPMENT_SHORT[name]} ${value} XP`));
+      });
+      panel.append(banked);
+      return panel;
+    }
+
     function buildReport(payload) {
       const report = payload.report;
       const analysis = report.analysis;
@@ -829,6 +933,7 @@ if (timeline.querySelector(`[data-sequence="${item.sequence}"]`)) return;
       output.append(fitness, development);
       storyGrid.append(story, output);
       root.append(storyGrid);
+      root.append(buildDevelopmentReport(payload));
 
       const insightGrid = el("div", "report-grid three-column");
       [["POSITIVE IMPACT", analysis.strengths, false], ["PERFORMANCE REVIEW", analysis.gaps, false], ["NEXT TRAINING BLOCK", analysis.coaching_actions, true]].forEach(([heading, items, includeFocus]) => {
