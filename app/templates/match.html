@@ -4,9 +4,16 @@
 {% block page_id %}match{% endblock %}
 {% block head_extra %}
 <link rel="stylesheet" href="{{ url_for('static', filename='match/match.css', v='1.7.0') }}">
+<link rel="stylesheet"
+      href="{{ url_for('static', filename='match/stadium-3d-poc.css', v='1.0.0') }}">
 {% endblock %}
 {% block scripts_extra %}
 <script type="module" src="{{ url_for('static', filename='match/bootstrap.js', v='1.7.0') }}"></script>
+<script src="{{ url_for('static', filename='vendor/model-viewer/config.js', v='1.0.0') }}"></script>
+<script type="module"
+        src="{{ url_for('static', filename='vendor/model-viewer/model-viewer.min.js', v='4.3.1') }}"></script>
+<script type="module"
+        src="{{ url_for('static', filename='match/stadium-3d-poc.js', v='1.0.0') }}"></script>
 {% endblock %}
 {% block content %}
 <section class="match-stage" id="match-stage"
@@ -34,7 +41,38 @@
   </div>
 
 
-  <div class="match-visual-shell">
+    <div class="match-view-switcher" id="match-view-switcher" hidden>
+    <button type="button"
+            data-match-view-target="3d"
+            aria-pressed="false"
+            disabled>3D Stadium</button>
+    <button type="button"
+            data-match-view-target="2d"
+            class="active"
+            aria-pressed="true">Tactical 2D</button>
+    <span class="match-3d-status" id="match-3d-status" role="status" aria-live="polite">
+      Checking 3D support…
+    </span>
+  </div>
+
+  <div class="match-3d-shell"
+       id="match-3d-shell"
+       data-model-src="{{ url_for('static', filename='match/assets/footy-match-stadium-v1.glb', v='1') }}"
+       hidden
+       aria-hidden="true">
+    <model-viewer id="match-3d-viewer"
+                  class="match-3d-viewer"
+                  alt="3D football stadium"
+                  camera-controls
+                  interaction-prompt="none"
+                  shadow-intensity="0.85"
+                  exposure="1.0"
+                  camera-orbit="-18deg 64deg 155m"
+                  field-of-view="31deg">
+    </model-viewer>
+  </div>
+
+<div class="match-visual-shell" id="match-2d-shell">
     <div class="match-visual-stage" id="match-visual-stage">
       <svg class="match-pitch-svg" id="match-pitch-svg" viewBox="0 0 1000 620" role="img" aria-label="Broadcast tactical football pitch">
         <defs>
