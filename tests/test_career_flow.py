@@ -41,6 +41,7 @@ def test_matchweek_creates_replay_events_and_automatic_development(tmp_path: Pat
     with app.app_context():
         career_id = create_career("Advay", "India", "CAM")
         set_training_focus(career_id, "passing")
+        before = get_active_career()
         report = play_next_week(career_id, seed=13)
 
         assert report is not None
@@ -48,11 +49,16 @@ def test_matchweek_creates_replay_events_and_automatic_development(tmp_path: Pat
         assert report["events"][0]["minute"] == 0
         assert report["events"][-1]["minute"] == 90
         assert report["fitness_after"] >= 45
-        assert "Progress:" in report["development_summary"] or "breakthrough" in report["development_summary"]
+        assert "Match development:" in report["development_summary"]
+        assert "Training:" in report["development_summary"]
 
         career = get_active_career()
         assert career["current_week"] == 2
-        assert 0 <= career["xp"] < 100
+        assert career["xp"] == 0
+        assert any(
+            career[name] > before[name] or career[f"{name}_xp"] > before[f"{name}_xp"]
+            for name in ("pace", "shooting", "passing", "dribbling", "defending", "physical")
+        )
 
 
 def test_training_plan_api_returns_json_without_page_reload(tmp_path: Path):

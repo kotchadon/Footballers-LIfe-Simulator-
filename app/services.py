@@ -8,7 +8,7 @@ import uuid
 from datetime import datetime, timezone
 
 from .db import get_db
-from .progression import ATTRIBUTES, apply_attribute_xp, training_development_xp
+from .progression import ATTRIBUTES, apply_attribute_xp, match_development_xp, training_development_xp
 from .match_visuals import build_visual_plan, visual_event_metadata
 from .calendar_engine import generate_season_calendar, get_calendar, get_week_context
 from .economy import (
@@ -469,6 +469,19 @@ def get_active_match_session(career_id):
     ).fetchone()
 
 
+def _week_has_settled_match(db, career):
+    """A week's training is included only in its first settled club match."""
+    return db.execute(
+        """
+        SELECT 1 FROM match_sessions ms
+        JOIN fixtures f ON f.id=ms.player_fixture_id
+        WHERE ms.career_id=? AND ms.season_number=? AND ms.status='completed'
+          AND COALESCE(f.calendar_week,f.week)=? LIMIT 1
+        """,
+        (career["id"], career["season_number"], career["calendar_week"]),
+    ).fetchone() is not None
+
+
 def _build_match_snapshot(career, fixtures, seed):
     rng = random.Random(seed)
     simulation_start_week = int(career.get("simulation_start_week", career["current_week"]))
@@ -594,15 +607,16 @@ def _build_match_snapshot(career, fixtures, seed):
     reputation_gain = performance["goals"] * 2 + performance["assists"] + int(performance["motm"])
 
     appeared = selection_status in {"starter", "substitute"}
-    match_xp = 0
-    if appeared:
-        match_xp = max(2, round(performance["rating"] * 1.5)) + performance["goals"] * 5 + performance["assists"] * 3
-    training_xp = 0
     effective_injury_weeks = max(0, career["injured_weeks"] - idle_weeks)
-    if effective_injury_weeks == 0 and training_focus != "recovery":
-        training_xp = training_plan["weekly_xp"] * elapsed_weeks
-        if appeared and performance["rating"] >= 7.5:
-            training_xp += 2
+    performance["minutes"] = minutes
+    match_xp = match_development_xp(performance)
+    training_xp = training_development_xp(
+        focus=training_focus, position=career["position"],
+        season_phase=career["season_phase"], minutes=minutes,
+        unavailable_injured=effective_injury_weeks > 0,
+    )
+    if career.get("training_already_awarded", False):
+        training_xp = dict.fromkeys(ATTRIBUTES, 0)
 
     injury_weeks = effective_injury_weeks
     if selection_status == "injured":
@@ -617,23 +631,33 @@ def _build_match_snapshot(career, fixtures, seed):
         suspension_matches = max(suspension_matches, 1)
         yellow_accumulation -= 5
 
-    development_seed = rng.getrandbits(63)
-    development = _plan_development(
-        career,
-        match_xp + training_xp,
-        training_focus,
-        development_seed,
-    )
+    attributes_before = {name: int(career[name]) for name in ATTRIBUTES}
+    meters_before = {name: int(career[f"{name}_xp"]) for name in ATTRIBUTES}
+    total_xp = {name: match_xp[name] + training_xp[name] for name in ATTRIBUTES}
+    result = apply_attribute_xp(
+        attributes=attributes_before, meters=meters_before, gains=total_xp,
+        position=career["position"], potential=career["potential"],
+    ) if any(total_xp.values()) else {
+        "attributes": dict(attributes_before), "meters": dict(meters_before),
+        "overall": career["overall"], "upgrades": [],
+    }
+    development = {
+        "schema_version": 2,
+        "match_xp": match_xp, "training_xp": training_xp, "total_xp": total_xp,
+        "attributes_before": attributes_before, "meters_before": meters_before,
+        "attributes": result["attributes"], "meters_after": result["meters"],
+        "overall_before": career["overall"], "overall": result["overall"],
+        "potential_before": career["potential"], "upgrades": result["upgrades"],
+    }
+    labels = dict(zip(ATTRIBUTES, ("PAC", "SHO", "PAS", "DRI", "DEF", "PHY")))
+    def xp_text(gains):
+        return " · ".join(f"{labels[name]} +{gains[name]} XP" for name in ATTRIBUTES if gains[name]) or "0 XP"
+    development_summary = f"Match development: {xp_text(match_xp)}. Training: {xp_text(training_xp)}."
     if development["upgrades"]:
-        upgraded = ", ".join(name.title() for name in development["upgrades"])
-        development_summary = f"Development breakthrough: {upgraded} +1. XP now {development['xp']}/100."
-    elif training_focus == "recovery":
-        development_summary = f"Recovery week completed. Fitness restored to {fitness_after}%."
-    else:
-        development_summary = (
-            f"{training_plan['label']} added {training_xp} training XP; "
-            f"match performance added {match_xp} XP. Progress: {development['xp']}/100."
+        transitions = " · ".join(
+            f"{labels[item['attribute']]} {item['from']} → {item['to']}" for item in development["upgrades"]
         )
+        development_summary += f" Development breakthrough: {transitions}."
 
     weekly_income = 0  # Salary is processed once per calendar week by the finance engine.
     bonus = performance["goals"] * 75 + performance["assists"] * 40 + int(performance["motm"]) * 100
@@ -685,7 +709,6 @@ def _build_match_snapshot(career, fixtures, seed):
             "match_xp": match_xp,
             "training_xp": training_xp,
             "development": development,
-            "development_seed": development_seed,
             "development_summary": development_summary,
             "weekly_income": weekly_income,
             "bonus": bonus,
@@ -705,7 +728,8 @@ def prepare_next_match(career_id, seed=None):
     career = db.execute(
         """
         SELECT careers.*, clubs.strength AS club_strength,
-               pa.pace, pa.shooting, pa.passing, pa.dribbling, pa.defending, pa.physical
+               pa.pace, pa.shooting, pa.passing, pa.dribbling, pa.defending, pa.physical,
+               pa.pace_xp, pa.shooting_xp, pa.passing_xp, pa.dribbling_xp, pa.defending_xp, pa.physical_xp
         FROM careers
         JOIN clubs ON clubs.id = careers.club_id
         JOIN player_attributes pa ON pa.career_id = careers.id
@@ -760,6 +784,7 @@ def prepare_next_match(career_id, seed=None):
         return None
 
     career_payload = dict(career)
+    career_payload["training_already_awarded"] = _week_has_settled_match(db, career)
     career_payload["simulation_start_week"] = career["current_week"]
     career_payload["simulation_end_week"] = end_week
     seed_value = int(seed) if seed is not None else secrets.randbits(63)
@@ -981,6 +1006,20 @@ def complete_match_session(public_id, career_id, allow_skip=False):
             db.rollback()
             return False, "Career state changed after this match was prepared.", None
 
+        development = snapshot["post_match"]["development"]
+        current_attributes = db.execute(
+            "SELECT * FROM player_attributes WHERE career_id=?", (career_id,),
+        ).fetchone()
+        if development.get("schema_version") == 2 and (
+            current_attributes is None
+            or any(current_attributes[name] != development["attributes_before"][name] for name in ATTRIBUTES)
+            or any(current_attributes[f"{name}_xp"] != development["meters_before"][name] for name in ATTRIBUTES)
+            or career["overall"] != development["overall_before"]
+            or career["potential"] != development["potential_before"]
+        ):
+            db.rollback()
+            return False, "Player development changed after this match was prepared.", None
+
         for result in snapshot["week_results"]:
             cursor = db.execute(
                 """
@@ -1021,13 +1060,25 @@ def complete_match_session(public_id, career_id, allow_skip=False):
 
         development = post_match["development"]
         attrs = development["attributes"]
+        if development.get("schema_version") == 2:
+            meters = development["meters_after"]
+        else:
+            # Finish legacy prepared matches without rerolling their sealed result.
+            # Migrate only their unspent global remainder, once, in this transaction.
+            meters = {name: current_attributes[f"{name}_xp"] for name in ATTRIBUTES}
+            focus = expected.get("training_focus", "balanced")
+            if focus not in ATTRIBUTES:
+                weights = POSITION_WEIGHTS.get(expected["position"], POSITION_WEIGHTS["CM"])
+                focus = max(ATTRIBUTES, key=lambda name: weights[name])
+            meters[focus] += max(0, int(development.get("xp", 0)))
         db.execute(
             """
             UPDATE player_attributes
-            SET pace = ?, shooting = ?, passing = ?, dribbling = ?, defending = ?, physical = ?
-            WHERE career_id = ?
+            SET pace=?,shooting=?,passing=?,dribbling=?,defending=?,physical=?,
+                pace_xp=?,shooting_xp=?,passing_xp=?,dribbling_xp=?,defending_xp=?,physical_xp=?
+            WHERE career_id=?
             """,
-            (attrs["pace"], attrs["shooting"], attrs["passing"], attrs["dribbling"], attrs["defending"], attrs["physical"], career_id),
+            (*[attrs[name] for name in ATTRIBUTES], *[meters[name] for name in ATTRIBUTES], career_id),
         )
         db.execute(
             """
@@ -1046,7 +1097,7 @@ def complete_match_session(public_id, career_id, allow_skip=False):
                 performance["fitness_after"], post_match["morale_change"], post_match["reputation_gain"],
                 post_match["weekly_income"] + post_match["bonus"], post_match["injury_weeks"],
                 post_match["suspension_matches"], post_match["yellow_accumulation"],
-                development["xp"], development["overall"],
+                0, development["overall"],
                 (3 if performance["rating"] >= 7.5 else 1 if performance["rating"] >= 6.5 else -2 if post_match["appeared"] else -1),
                 development["overall"], career_id,
             ),
@@ -1694,7 +1745,8 @@ def _apply_free_week_development(db, career, rng):
             (career["id"],),
         )
         return "Recovery plan restored fitness and reduced stress."
-    gains = training_development_xp(
+    already_trained = _week_has_settled_match(db, career)
+    gains = dict.fromkeys(ATTRIBUTES, 0) if already_trained else training_development_xp(
         focus=focus,
         position=career["position"],
         season_phase=career["season_phase"],
@@ -1735,6 +1787,8 @@ def _apply_free_week_development(db, career, rng):
         """,
         (overall, overall, overall, career["id"]),
     )
+    if already_trained:
+        return "Match-week development already settled; fitness recovery completed."
     if career["injured_weeks"] > 0:
         return "Injury recovery restored fitness; no training XP awarded."
     if upgrades:

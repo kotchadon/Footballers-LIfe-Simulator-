@@ -453,3 +453,92 @@ def test_task4_training_balanced_preseason_never_loses_rounding_point(minutes, t
 @pytest.mark.parametrize("focus,injured", [("recovery", False), ("recovery", True), ("passing", True), ("balanced", True)])
 def test_task4_training_recovery_or_injury_awards_zero(focus, injured):
     assert _task4_training(focus=focus, unavailable_injured=injured, season_phase="preseason") == dict.fromkeys(ATTRIBUTE_NAMES, 0)
+
+
+# Task 5: sealed progression uses the exact performance and persistent meters.
+def _task5_snapshot_inputs(tmp_path):
+    from app.services import _build_match_snapshot
+    app = make_app(tmp_path)
+    with app.app_context():
+        create_career('Advay', 'India', 'CAM')
+        career = dict(get_active_career())
+    career.update(overall=58, potential=88, club_strength=60, fitness=80, morale=70,
+        manager_trust=35, squad_level='first_team', injured_weeks=0, suspended_matches=0,
+        calendar_week=6, season_phase='competitive', training_focus='passing', xp=0, current_week=1)
+    for name in ATTRIBUTE_NAMES:
+        career[name] = 58
+        career[name + '_xp'] = 10
+    fixtures = [dict(id=1, week=1, calendar_week=6, home_club_id=career['club_id'],
+        away_club_id=career['club_id'] + 1, home_strength=60, away_strength=60,
+        home_name='Home', away_name='Away', kickoff_date='2026-08-10')]
+    return career, fixtures, _build_match_snapshot
+
+
+@pytest.mark.parametrize('seed,status,minutes,training', [(4,'starter',90,21), (0,'substitute',24,27), (12,'bench',0,30)])
+def test_task5_snapshot_awards_real_actions_and_minutes_without_mutation(tmp_path, seed, status, minutes, training):
+    from app.progression import match_development_xp
+    career, fixtures, build = _task5_snapshot_inputs(tmp_path)
+    before = deepcopy((career, fixtures))
+    snapshot = build(career, fixtures, seed)
+    assert snapshot == build(career, fixtures, seed)
+    assert (career, fixtures) == before
+    performance = snapshot['performance']
+    assert (performance['selection_status'], performance['minutes']) == (status, minutes)
+    development = snapshot['post_match']['development']
+    assert development['schema_version'] == 2
+    assert development['match_xp'] == match_development_xp(performance)
+    assert sum(development['training_xp'].values()) == training
+    assert development['training_xp']['passing'] == {21:14, 27:18, 30:20}[training]
+    assert development['total_xp'] == {name: development['match_xp'][name] + development['training_xp'][name] for name in ATTRIBUTE_NAMES}
+    assert development['meters_before'] == dict.fromkeys(ATTRIBUTE_NAMES,10)
+    assert development['attributes_before'] == dict.fromkeys(ATTRIBUTE_NAMES,58)
+    assert development['overall_before'] == 58
+    if minutes == 0:
+        assert sum(development['match_xp'].values()) == 0
+    else:
+        assert 0 < sum(development['match_xp'].values()) <= 75
+    assert '/100' not in snapshot['post_match']['development_summary']
+
+
+def test_task5_snapshot_in_match_injury_keeps_earned_actions(tmp_path):
+    career, fixtures, build = _task5_snapshot_inputs(tmp_path)
+    snapshot = build(career, fixtures, 36)
+    assert snapshot['performance']['injured'] is True
+    assert snapshot['performance']['minutes'] == 24
+    development = snapshot['post_match']['development']
+    assert sum(development['match_xp'].values()) > 0
+    assert sum(development['training_xp'].values()) == 27
+
+
+@pytest.mark.parametrize('unavailable', ['injured', 'suspended'])
+def test_task5_snapshot_unavailable_player_training_rules(tmp_path, unavailable):
+    career, fixtures, build = _task5_snapshot_inputs(tmp_path)
+    career['injured_weeks' if unavailable == 'injured' else 'suspended_matches'] = 2
+    for name in ATTRIBUTE_NAMES:
+        career[name + '_xp'] = 70
+    snapshot = build(career, fixtures, 4)
+    assert snapshot['performance']['selection_status'] == unavailable
+    development = snapshot['post_match']['development']
+    assert sum(development['match_xp'].values()) == 0
+    assert sum(development['training_xp'].values()) == (0 if unavailable == 'injured' else 30)
+    if unavailable == 'injured':
+        assert development['attributes'] == development['attributes_before']
+        assert development['meters_after'] == dict.fromkeys(ATTRIBUTE_NAMES,70)
+
+
+def test_task5_snapshot_recovery_has_match_xp_but_no_training(tmp_path):
+    career, fixtures, build = _task5_snapshot_inputs(tmp_path)
+    career['training_focus'] = 'recovery'
+    snapshot = build(career, fixtures, 4)
+    development = snapshot['post_match']['development']
+    assert sum(development['training_xp'].values()) == 0
+    assert sum(development['match_xp'].values()) > 0
+
+
+def test_task5_snapshot_already_trained_week_has_no_second_training_award(tmp_path):
+    career, fixtures, build = _task5_snapshot_inputs(tmp_path)
+    career['training_already_awarded'] = True
+    snapshot = build(career, fixtures, 4)
+    development = snapshot['post_match']['development']
+    assert sum(development['training_xp'].values()) == 0
+    assert sum(development['match_xp'].values()) > 0
