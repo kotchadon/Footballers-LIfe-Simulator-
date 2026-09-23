@@ -1680,6 +1680,15 @@ def accept_transfer_offer(career_id, offer_id):
                 offer["signing_bonus"], squad_level, trust, career_id,
             ),
         )
+        if offer["season_number"] == career["season_number"]:
+            db.execute(
+                """
+                UPDATE season_player_stats SET club_id=?
+                WHERE career_id=? AND season_number=?
+                """,
+                (offer["to_club_id"], career_id, career["season_number"]),
+            )
+
         if (
             offer["season_number"] == career["season_number"]
             and _transfer_can_rebuild_current_schedule(
@@ -1728,8 +1737,60 @@ def decline_transfer_offer(career_id, offer_id):
     return cursor.rowcount > 0
 
 
+def _history_season_label(career, season_number):
+    try:
+        current_start = int(str(career["season_label"]).split("/")[0])
+        start = current_start - (int(career["season_number"]) - int(season_number))
+        return f"{start}/{str(start + 1)[-2:]}"
+    except (TypeError, ValueError, KeyError):
+        return f"Season {season_number}"
+
+
+def _history_club_identity(db, career_id, club_id, season_number, preferred_league_id=None):
+    club = db.execute("SELECT id,name,league_id FROM clubs WHERE id=?", (club_id,)).fetchone()
+    if club is None:
+        return {"club_id": club_id, "club_name": "Unknown club", "league_id": preferred_league_id,
+                "league_name": None, "country_name": None}
+    league_id = preferred_league_id
+    if league_id is None:
+        membership = db.execute(
+            "SELECT league_id FROM world_memberships WHERE career_id=? AND season_number=? AND club_id=?",
+            (career_id, season_number, club_id),
+        ).fetchone()
+        if membership is not None:
+            league_id = membership["league_id"]
+    if league_id is None:
+        league_id = club["league_id"]
+    league = None
+    if league_id is not None:
+        league = db.execute(
+            """
+            SELECT l.id,l.name,c.name AS country_name
+            FROM leagues l LEFT JOIN countries c ON c.id=l.country_id
+            WHERE l.id=?
+            """,
+            (league_id,),
+        ).fetchone()
+    return {
+        "club_id": club_id,
+        "club_name": club["name"],
+        "league_id": league_id,
+        "league_name": league["name"] if league else None,
+        "country_name": league["country_name"] if league else None,
+    }
+
+
 def get_season_history(career_id):
-    return get_db().execute(
+    db = get_db()
+    career = db.execute(
+        "SELECT id,club_id,league_id,season_number,season_label FROM careers WHERE id=?",
+        (career_id,),
+    ).fetchone()
+    if career is None:
+        return []
+
+    rows = {}
+    for row in db.execute(
         """
         SELECT season_history.*, clubs.name AS club_name, leagues.name AS league_name,
                countries.name AS country_name
@@ -1740,18 +1801,193 @@ def get_season_history(career_id):
         WHERE season_history.career_id=? ORDER BY season_number DESC
         """,
         (career_id,),
-    ).fetchall()
+    ).fetchall():
+        item = dict(row)
+        item.update(is_current=False, is_recovered=False, is_complete=True)
+        rows[int(item["season_number"])] = item
 
-
-def get_club_history(career_id):
-    return get_db().execute(
+    transfers = db.execute(
         """
-        SELECT club_history.*, clubs.name AS club_name
-        FROM club_history JOIN clubs ON clubs.id = club_history.club_id
-        WHERE club_history.career_id = ? ORDER BY joined_season DESC, club_history.id DESC
+        SELECT id,season_number,from_club_id,to_club_id,to_league_id
+        FROM transfer_offers
+        WHERE career_id=? AND status='accepted'
+        ORDER BY season_number,id
         """,
         (career_id,),
     ).fetchall()
+    transfer_by_season = {int(row["season_number"]): dict(row) for row in transfers}
+
+    def add_recovered(season_number, season_label, club_id, league_id,
+                      appearances=0, goals=0, assists=0, rating_total=0.0,
+                      is_current=False):
+        season_number = int(season_number)
+        if season_number in rows:
+            return
+        identity = _history_club_identity(db, career_id, club_id, season_number, league_id)
+        appearances = int(appearances or 0)
+        rows[season_number] = {
+            "id": None, "career_id": career_id, "season_number": season_number,
+            "season_label": season_label, **identity,
+            "league_position": "—", "league_points": "—",
+            "appearances": appearances, "goals": int(goals or 0),
+            "assists": int(assists or 0),
+            "average_rating": round(float(rating_total or 0) / appearances, 2) if appearances else 0,
+            "awards": "", "is_current": bool(is_current),
+            "is_recovered": not bool(is_current), "is_complete": False,
+        }
+
+    for stats in db.execute(
+        "SELECT * FROM season_player_stats WHERE career_id=? ORDER BY season_number",
+        (career_id,),
+    ).fetchall():
+        season_number = int(stats["season_number"])
+        if season_number in rows:
+            continue
+        transfer = transfer_by_season.get(season_number)
+        current = season_number == int(career["season_number"])
+        if current:
+            club_id, league_id = career["club_id"], career["league_id"]
+        elif transfer:
+            club_id, league_id = transfer["to_club_id"], transfer["to_league_id"]
+        else:
+            club_id, league_id = stats["club_id"], None
+        add_recovered(
+            season_number, stats["season_label"], club_id, league_id,
+            stats["appearances"], stats["goals"], stats["assists"],
+            stats["rating_total"], is_current=current,
+        )
+
+    if transfers:
+        first = transfers[0]
+        first_season = max(1, int(first["season_number"]) - 1)
+        add_recovered(
+            first_season, _history_season_label(career, first_season),
+            first["from_club_id"], None,
+        )
+        for transfer in transfers:
+            season_number = int(transfer["season_number"])
+            add_recovered(
+                season_number, _history_season_label(career, season_number),
+                transfer["to_club_id"], transfer["to_league_id"],
+                is_current=season_number == int(career["season_number"]),
+            )
+
+    current_number = int(career["season_number"])
+    add_recovered(
+        current_number, career["season_label"], career["club_id"], career["league_id"],
+        is_current=True,
+    )
+    return [rows[number] for number in sorted(rows, reverse=True)]
+
+
+def get_club_history(career_id):
+    db = get_db()
+    career = db.execute(
+        "SELECT id,club_id,league_id,season_number,season_label FROM careers WHERE id=?",
+        (career_id,),
+    ).fetchone()
+    if career is None:
+        return []
+
+    journey = {}
+
+    def add(club_id, joined_season, left_season=None, reason="Career record",
+            preferred_league_id=None, persisted_id=None):
+        if club_id is None:
+            return
+        joined_season = max(1, int(joined_season or 1))
+        key = (int(club_id), joined_season)
+        identity = _history_club_identity(
+            db, career_id, int(club_id), joined_season, preferred_league_id
+        )
+        item = {
+            "id": persisted_id, "career_id": career_id, **identity,
+            "joined_season": joined_season,
+            "left_season": int(left_season) if left_season is not None else None,
+            "reason": reason,
+            "is_current": int(club_id) == int(career["club_id"]),
+        }
+        if key not in journey:
+            journey[key] = item
+        else:
+            existing = journey[key]
+            if existing["left_season"] is None and item["left_season"] is not None:
+                existing["left_season"] = item["left_season"]
+            if existing["reason"] in {"Career record", "Season record"} and reason:
+                existing["reason"] = reason
+            if not existing.get("league_name") and item.get("league_name"):
+                existing.update(
+                    league_id=item["league_id"],
+                    league_name=item["league_name"],
+                    country_name=item["country_name"],
+                )
+            existing["is_current"] = existing["is_current"] or item["is_current"]
+
+    for row in db.execute(
+        "SELECT * FROM club_history WHERE career_id=? ORDER BY joined_season,id",
+        (career_id,),
+    ).fetchall():
+        add(row["club_id"], row["joined_season"], row["left_season"], row["reason"], persisted_id=row["id"])
+
+    transfers = db.execute(
+        """
+        SELECT id,season_number,from_club_id,to_club_id,to_league_id
+        FROM transfer_offers
+        WHERE career_id=? AND status='accepted'
+        ORDER BY season_number,id
+        """,
+        (career_id,),
+    ).fetchall()
+
+    if transfers:
+        first = transfers[0]
+        source_rows = [x for x in journey.values() if x["club_id"] == int(first["from_club_id"])]
+        source_joined = min((x["joined_season"] for x in source_rows), default=1)
+        add(
+            first["from_club_id"], source_joined,
+            max(source_joined, int(first["season_number"]) - 1),
+            source_rows[0]["reason"] if source_rows else "Career start",
+        )
+        for i, transfer in enumerate(transfers):
+            joined = int(transfer["season_number"])
+            next_joined = int(transfers[i + 1]["season_number"]) if i + 1 < len(transfers) else None
+            left = max(joined, next_joined - 1) if next_joined is not None else None
+            add(
+                transfer["to_club_id"], joined, left, "Transfer",
+                preferred_league_id=transfer["to_league_id"],
+            )
+
+    for season in sorted(get_season_history(career_id), key=lambda x: int(x["season_number"])):
+        season_number = int(season["season_number"])
+        club_id = int(season["club_id"])
+        covered = any(
+            item["club_id"] == club_id
+            and item["joined_season"] <= season_number
+            and (item["left_season"] is None or item["left_season"] >= season_number)
+            for item in journey.values()
+        )
+        if not covered:
+            add(
+                club_id, season_number, reason="Season record",
+                preferred_league_id=season.get("league_id"),
+            )
+
+    current = [x for x in journey.values() if x["club_id"] == int(career["club_id"])]
+    if current:
+        latest = max(current, key=lambda x: x["joined_season"])
+        latest["left_season"] = None
+        latest["is_current"] = True
+    else:
+        add(
+            career["club_id"], career["season_number"], reason="Current club",
+            preferred_league_id=career["league_id"],
+        )
+
+    return sorted(
+        journey.values(),
+        key=lambda x: (x["joined_season"], x["id"] or 0),
+        reverse=True,
+    )
 
 
 def get_finances(career_id, limit=20):
