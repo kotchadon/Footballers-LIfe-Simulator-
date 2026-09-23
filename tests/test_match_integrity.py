@@ -339,7 +339,7 @@ def test_task5_legacy_prepared_match_keeps_sealed_result_and_migrates_remainder_
         db.execute('UPDATE match_sessions SET simulation_json=? WHERE id=?',(json.dumps(snapshot),session['id']))
         db.commit()
         assert complete_match_session(session['public_id'],career_id,allow_skip=True)[0]
-        expected_meters=dict(before[1]);expected_meters['passing']+=17
+        expected_meters=dict(before[1]);expected_meters['passing']=17
         assert _task5_state()==(legacy_attributes,expected_meters,58,0)
         assert complete_match_session(session['public_id'],career_id,allow_skip=True)[0]
         assert _task5_state()==(legacy_attributes,expected_meters,58,0)
@@ -475,3 +475,76 @@ def test_task7_legacy_prepared_match_uses_summary_fallback_without_crashing(tmp_
         assert ok, message
         assert payload["development"] is None
         assert payload["report"]["development_summary"]
+
+
+def test_final_review_legacy_prepared_match_does_not_double_migrate_pre_match_xp(tmp_path):
+    from app.db import migrate_existing_save
+
+    app = make_app(tmp_path)
+    with app.app_context():
+        career_id = create_career("Advay", "India", "CAM")
+        advance_to_first_fixture(career_id)
+        db = get_db()
+
+        db.execute(
+            "UPDATE careers SET xp=70, training_focus='passing' WHERE id=?",
+            (career_id,),
+        )
+        db.execute(
+            """
+            UPDATE player_attributes
+            SET pace_xp=0,shooting_xp=0,passing_xp=0,
+                dribbling_xp=0,defending_xp=0,physical_xp=0,
+                legacy_xp_migrated=0
+            WHERE career_id=?
+            """,
+            (career_id,),
+        )
+        db.commit()
+
+        session = prepare_next_match(career_id, seed=1818)
+        snapshot = json.loads(session["simulation_json"])
+        attrs = dict(snapshot["post_match"]["development"]["attributes_before"])
+        attrs["passing"] += 1
+
+        snapshot["post_match"]["development"] = {
+            "attributes": attrs,
+            "overall": snapshot["post_match"]["development"]["overall_before"],
+            "xp": 17,
+            "upgrades": ["passing"],
+        }
+        db.execute(
+            "UPDATE match_sessions SET simulation_json=? WHERE id=?",
+            (json.dumps(snapshot), session["id"]),
+        )
+        db.commit()
+
+        migrate_existing_save(db)
+        migrated = db.execute(
+            "SELECT passing_xp FROM player_attributes WHERE career_id=?",
+            (career_id,),
+        ).fetchone()["passing_xp"]
+        assert migrated == 70
+        assert db.execute(
+            "SELECT xp FROM careers WHERE id=?", (career_id,)
+        ).fetchone()["xp"] == 0
+
+        ok, message, _ = complete_match_session(
+            session["public_id"], career_id, allow_skip=True
+        )
+        assert ok, message
+
+        after = db.execute(
+            "SELECT passing_xp FROM player_attributes WHERE career_id=?",
+            (career_id,),
+        ).fetchone()["passing_xp"]
+        assert after == 17
+
+        ok, message, _ = complete_match_session(
+            session["public_id"], career_id, allow_skip=True
+        )
+        assert ok, message
+        assert db.execute(
+            "SELECT passing_xp FROM player_attributes WHERE career_id=?",
+            (career_id,),
+        ).fetchone()["passing_xp"] == 17

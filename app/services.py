@@ -1112,7 +1112,10 @@ def complete_match_session(public_id, career_id, allow_skip=False):
             if focus not in ATTRIBUTES:
                 weights = POSITION_WEIGHTS.get(expected["position"], POSITION_WEIGHTS["CM"])
                 focus = max(ATTRIBUTES, key=lambda name: weights[name])
-            meters[focus] += max(0, int(development.get("xp", 0)))
+            # A legacy snapshot's xp value is the sealed post-match remainder,
+            # not an incremental award. Replace the target meter with that
+            # remainder so startup-migrated pre-match XP is not counted twice.
+            meters[focus] = max(0, int(development.get("xp", 0)))
         db.execute(
             """
             UPDATE player_attributes
