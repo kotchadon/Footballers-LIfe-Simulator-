@@ -109,3 +109,15 @@ def test_stadium_glb_is_self_contained_and_does_not_need_optional_decoders():
     for side in ("home", "away"):
         for number in range(1, 12):
             assert f"{side}_{number:02d}" in names
+
+def test_stage1_hidden_viewer_forces_eager_model_loading():
+    source = Path("app/templates/match.html").read_text()
+
+    start = source.index('id="match-3d-viewer"')
+    end = source.index("</model-viewer>", start)
+    viewer_markup = source[start:end]
+
+    # The 3D shell intentionally starts hidden so the existing 2D renderer is
+    # always the safe first paint. model-viewer lazy-loads by default, so hidden
+    # preload must explicitly opt into eager loading or `load` can never fire.
+    assert 'loading="eager"' in viewer_markup
