@@ -8,6 +8,7 @@ import uuid
 from datetime import datetime, timezone
 
 from .db import get_db
+from .progression import ATTRIBUTES, apply_attribute_xp, training_development_xp
 from .match_visuals import build_visual_plan, visual_event_metadata
 from .calendar_engine import generate_season_calendar, get_calendar, get_week_context
 from .economy import (
@@ -1689,32 +1690,58 @@ def _apply_free_week_development(db, career, rng):
     focus = career["training_focus"] if career["training_focus"] in TRAINING_FOCUS else "balanced"
     if focus == "recovery":
         db.execute(
-            "UPDATE careers SET fitness=MIN(100,fitness+12), morale=MIN(100,morale+2), stress=MAX(0,stress-3) WHERE id=?",
+            "UPDATE careers SET xp=0, fitness=MIN(100,fitness+12), morale=MIN(100,morale+2), stress=MAX(0,stress-3) WHERE id=?",
             (career["id"],),
         )
         return "Recovery plan restored fitness and reduced stress."
-    xp_gain = 8 if career["season_phase"] == "preseason" else 5 if career["season_phase"] == "competitive" else 3
-    development = _plan_development(career, xp_gain, focus, rng.getrandbits(63))
-    attrs = development["attributes"]
-    db.execute(
-        """
-        UPDATE player_attributes SET pace=?,shooting=?,passing=?,dribbling=?,defending=?,physical=?
-        WHERE career_id=?
-        """,
-        (attrs["pace"], attrs["shooting"], attrs["passing"], attrs["dribbling"], attrs["defending"], attrs["physical"], career["id"]),
+    gains = training_development_xp(
+        focus=focus,
+        position=career["position"],
+        season_phase=career["season_phase"],
+        minutes=0,
+        unavailable_injured=career["injured_weeks"] > 0,
     )
+    overall = career["overall"]
+    upgrades = []
+    # Zero-training weeks must not convert previously banked XP either.
+    if any(gains.values()):
+        row = db.execute("SELECT * FROM player_attributes WHERE career_id=?", (career["id"],)).fetchone()
+        development = apply_attribute_xp(
+            attributes={name: row[name] for name in ATTRIBUTES},
+            meters={name: row[f"{name}_xp"] for name in ATTRIBUTES},
+            gains=gains,
+            position=career["position"],
+            potential=career["potential"],
+        )
+        attrs = development["attributes"]
+        meters = development["meters"]
+        overall = development["overall"]
+        upgrades = development["upgrades"]
+        db.execute(
+            """
+            UPDATE player_attributes
+            SET pace=?,shooting=?,passing=?,dribbling=?,defending=?,physical=?,
+                pace_xp=?,shooting_xp=?,passing_xp=?,dribbling_xp=?,defending_xp=?,physical_xp=?
+            WHERE career_id=?
+            """,
+            (*[attrs[name] for name in ATTRIBUTES], *[meters[name] for name in ATTRIBUTES], career["id"]),
+        )
     db.execute(
         """
-        UPDATE careers SET xp=?,overall=?,fitness=MIN(100,fitness+7),
+        UPDATE careers SET xp=0,overall=?,fitness=MIN(100,fitness+7),
             morale=MIN(100,morale+1),stress=MAX(0,stress-1),
             market_value=MAX(market_value,? * ? * 40)
         WHERE id=?
         """,
-        (development["xp"], development["overall"], development["overall"], development["overall"], career["id"]),
+        (overall, overall, overall, career["id"]),
     )
-    if development["upgrades"]:
-        return "Free-week breakthrough: " + ", ".join(item.title() for item in development["upgrades"]) + " +1."
-    return f"{TRAINING_FOCUS[focus]['label']} added {xp_gain} development XP."
+    if career["injured_weeks"] > 0:
+        return "Injury recovery restored fitness; no training XP awarded."
+    if upgrades:
+        return "Free-week breakthrough: " + ", ".join(
+            f"{item['attribute'].title()} {item['from']} → {item['to']}" for item in upgrades
+        ) + "."
+    return f"{TRAINING_FOCUS[focus]['label']} added {sum(gains.values())} development XP."
 
 
 def advance_calendar_week(career_id, seed=None):

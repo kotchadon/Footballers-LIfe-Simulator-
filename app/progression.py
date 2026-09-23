@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 
-from .engine import calculate_overall
+from .engine import POSITION_WEIGHTS, calculate_overall
 
 
 ATTRIBUTES = (
@@ -69,7 +69,8 @@ def largest_remainder_scale(values: dict[str, float], target_total: int) -> dict
     rank = {name: index for index, name in enumerate(ATTRIBUTES)}
     ordered = sorted(
         scaled,
-        key=lambda key: (-(scaled[key] - floors[key]), rank.get(key, len(ATTRIBUTES)), key),
+        # Ignore binary-float noise so mathematical ties use attribute order.
+        key=lambda key: (-round(scaled[key] - floors[key], 12), rank.get(key, len(ATTRIBUTES)), key),
     )
     result = dict(floors)
     for key in ordered[:max(0, remainder)]:
@@ -180,3 +181,35 @@ def match_development_xp(performance: dict) -> dict[str, int]:
     # Approved spec: round each multiplied category before the global cap.
     multiplied = {name: round(value * multiplier) for name, value in capped.items()}
     return largest_remainder_scale(multiplied, 75)
+
+
+TRAINING_SUPPORT = {
+    "pace": ("dribbling", "physical"),
+    "shooting": ("dribbling", "physical"),
+    "passing": ("dribbling", "physical"),
+    "dribbling": ("pace", "passing"),
+    "defending": ("physical", "passing"),
+    "physical": ("pace", "defending"),
+}
+
+
+def training_development_xp(*, focus: str, position: str, season_phase: str,
+                            minutes: int, unavailable_injured: bool) -> dict[str, int]:
+    """Allocate one week's training; changing focus never calls persistence."""
+    if focus == "recovery" or unavailable_injured:
+        return dict.fromkeys(ATTRIBUTES, 0)
+
+    load = 0.70 if minutes >= 60 else 0.80 if minutes >= 30 else 0.90 if minutes > 0 else 1.00
+    multiplier = load * (1.25 if season_phase == "preseason" else 1.00)
+    target = round(30 * multiplier)
+    if focus == "balanced":
+        # Start from the rounded budget: the allocator does not pad to its cap.
+        weights = POSITION_WEIGHTS[position]
+        gains = {name: target * weights[name] for name in ATTRIBUTES}
+    else:
+        support_a, support_b = TRAINING_SUPPORT[focus]
+        gains = dict.fromkeys(ATTRIBUTES, 0.0)
+        gains[focus] = 20 * multiplier
+        gains[support_a] = 5 * multiplier
+        gains[support_b] = 5 * multiplier
+    return largest_remainder_scale(gains, target)

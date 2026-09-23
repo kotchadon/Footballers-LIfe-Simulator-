@@ -381,3 +381,75 @@ def test_task3_real_engine_metrics_with_authoritative_minutes():
     assert result["passing"] > 0
     assert result["physical"] > 0
     assert performance == before
+
+
+# Task 4: weekly attribute training.
+def test_task4_training_allocation_resolves_decimal_ties_in_attribute_order():
+    from app.progression import largest_remainder_scale
+    # 30 * .18 and 30 * .28 have equal mathematical fractional remainders.
+    assert largest_remainder_scale({"shooting": 30 * .18, "passing": 30 * .28}, 14) == {"shooting": 6, "passing": 8}
+
+
+def _task4_training(**overrides):
+    from app import progression
+    function = getattr(progression, "training_development_xp", None)
+    assert callable(function), "Task 4 missing: training_development_xp"
+    arguments = dict(focus="passing", position="CAM", season_phase="competitive", minutes=0, unavailable_injured=False)
+    arguments.update(overrides)
+    return function(**arguments)
+
+
+@pytest.mark.parametrize("focus,want", [
+    ("pace", (20, 0, 0, 5, 0, 5)),
+    ("shooting", (0, 20, 0, 5, 0, 5)),
+    ("passing", (0, 0, 20, 5, 0, 5)),
+    ("dribbling", (5, 0, 5, 20, 0, 0)),
+    ("defending", (0, 0, 5, 0, 20, 5)),
+    ("physical", (5, 0, 0, 0, 5, 20)),
+])
+def test_task4_training_focus_has_fixed_support_pair(focus, want):
+    assert _task4_training(focus=focus) == dict(zip(ATTRIBUTE_NAMES, want))
+
+
+@pytest.mark.parametrize("minutes,want", [
+    (0, (0, 0, 20, 5, 0, 5)),
+    (1, (0, 0, 18, 5, 0, 4)),
+    (29, (0, 0, 18, 5, 0, 4)),
+    (30, (0, 0, 16, 4, 0, 4)),
+    (59, (0, 0, 16, 4, 0, 4)),
+    (60, (0, 0, 14, 4, 0, 3)),
+    (90, (0, 0, 14, 4, 0, 3)),
+])
+def test_task4_training_minutes_reduce_load_at_exact_boundaries(minutes, want):
+    assert _task4_training(minutes=minutes) == dict(zip(ATTRIBUTE_NAMES, want))
+
+
+@pytest.mark.parametrize("minutes,total", [(0, 38), (1, 34), (30, 30), (60, 26)])
+def test_task4_training_preseason_bonus_preserves_rounded_total(minutes, total):
+    result = _task4_training(season_phase="preseason", minutes=minutes)
+    assert sum(result.values()) == total
+    if minutes == 0:
+        assert result == dict(zip(ATTRIBUTE_NAMES, (0, 0, 25, 7, 0, 6)))
+
+
+@pytest.mark.parametrize("position,want", [
+    ("ST", (6, 10, 3, 5, 1, 5)),
+    ("CAM", (3, 6, 8, 8, 1, 4)),
+    ("CB", (3, 1, 3, 1, 12, 10)),
+])
+def test_task4_training_balanced_uses_position_weights_deterministically(position, want):
+    result = _task4_training(focus="balanced", position=position)
+    assert result == dict(zip(ATTRIBUTE_NAMES, want))
+    assert _task4_training(focus="balanced", position=position) == result
+
+
+@pytest.mark.parametrize("minutes,total", [(0, 38), (1, 34), (30, 30), (60, 26)])
+def test_task4_training_balanced_preseason_never_loses_rounding_point(minutes, total):
+    result = _task4_training(focus="balanced", season_phase="preseason", minutes=minutes)
+    assert sum(result.values()) == total
+    assert all(type(value) is int and value >= 0 for value in result.values())
+
+
+@pytest.mark.parametrize("focus,injured", [("recovery", False), ("recovery", True), ("passing", True), ("balanced", True)])
+def test_task4_training_recovery_or_injury_awards_zero(focus, injured):
+    assert _task4_training(focus=focus, unavailable_injured=injured, season_phase="preseason") == dict.fromkeys(ATTRIBUTE_NAMES, 0)
