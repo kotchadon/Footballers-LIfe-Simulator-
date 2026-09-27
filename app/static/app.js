@@ -363,7 +363,7 @@
     if (!panel || !button) return;
     const endpoint = panel.dataset.trainingEndpoint;
     const focus = button.dataset.trainingFocus;
-    if (!endpoint || !focus || button.disabled) return;
+    if (!endpoint || !focus || button.disabled || panel.dataset.trainingLocked === "true") return;
 
     document.querySelectorAll("[data-training-focus]").forEach((item) => item.disabled = true);
     button.classList.add("loading");
@@ -375,23 +375,28 @@
         body: JSON.stringify({focus}),
       });
       const data = await response.json();
+      if (data.plan?.locked) panel.dataset.trainingLocked = "true";
       if (!response.ok || !data.ok) throw new Error(data.message || "Could not update training plan.");
 
       document.querySelectorAll("[data-training-focus]").forEach((item) => {
-        item.classList.toggle("selected", item.dataset.trainingFocus === data.plan.focus);
+        const selected = item.dataset.trainingFocus === data.plan.focus;
+        item.classList.toggle("selected", selected);
+        item.setAttribute("aria-pressed", String(selected));
       });
       document.getElementById("training-plan-label").textContent = data.plan.label;
       document.getElementById("training-plan-title").textContent = data.plan.label;
       document.getElementById("training-plan-description").textContent = data.plan.description;
-      document.getElementById("hero-training-pill").textContent = `Plan · ${data.plan.label}`;
-      document.getElementById("xp-progress").textContent = `${data.plan.xp}/100 XP`;
-      document.getElementById("xp-track-fill").style.width = `${data.plan.xp}%`;
+      document.getElementById("hero-training-pill").textContent = data.plan.label;
+      panel.querySelectorAll("[data-training-preview]").forEach((item) => {
+        item.textContent = `+${data.plan.weekly_preview[item.dataset.trainingPreview]} XP`;
+      });
+      document.getElementById("training-preview-note").textContent = data.plan.preview_note;
       showToast(data.message);
     } catch (error) {
       showToast(error.message || "Training plan failed.", true);
     } finally {
       button.classList.remove("loading");
-      document.querySelectorAll("[data-training-focus]").forEach((item) => item.disabled = false);
+      document.querySelectorAll("[data-training-focus]").forEach((item) => item.disabled = panel.dataset.trainingLocked === "true");
     }
   }
 
@@ -470,6 +475,15 @@
     let finalising = false;
     let reportShown = false;
     let skipInProgress = false;
+    let advancing = false;
+    window.FootyRevealedEvents = [];
+    function syncVisualControls() {
+      stage.dataset.replayPaused = String(paused);
+      stage.dataset.replaySpeed = String(speed);
+      window.FootyMatchVisuals?.setSpeed(speed);
+      if (paused) window.FootyMatchVisuals?.pause();
+      else window.FootyMatchVisuals?.resume();
+    }
     const livePresentationSeen = new Set();
     const livePlayerStats = {
       goals: 0,
@@ -681,7 +695,9 @@ if (timeline.querySelector(`[data-sequence="${item.sequence}"]`)) return;
         )
       ) return;
 
-      if (instant || !item.visual) {
+      if (!window.FootyRevealedEvents.some(event => event.sequence === item.sequence)) window.FootyRevealedEvents.push(item);
+      if (instant || !item.visual || paused || alreadyCompleted) {
+        window.FootyMatchVisuals?.applyInstantEvent(item);
         addEventImmediate(item, instant);
         return;
       }
@@ -696,14 +712,18 @@ if (timeline.querySelector(`[data-sequence="${item.sequence}"]`)) return;
 
       const VISUAL_TIMEOUT_MS = 1600;
       let timeoutId = null;
+      let visualSettled = false;
 
       try {
-        const timeout = new Promise((resolve) => {
-          timeoutId = window.setTimeout(
-            resolve,
-            VISUAL_TIMEOUT_MS,
-          );
-        });
+        const cancelExpired = () => {
+          if (!visualSettled) window.FootyMatchVisuals?.cancelEvent();
+        };
+        // Match time stops while paused/hidden; its watchdog must stop too.
+        const timeout = window.FootyMatchVisuals?.waitForSimulation
+          ? window.FootyMatchVisuals.waitForSimulation(VISUAL_TIMEOUT_MS / 1000).then(cancelExpired)
+          : new Promise(resolve => {
+              timeoutId = window.setTimeout(() => { cancelExpired(); resolve(); }, VISUAL_TIMEOUT_MS);
+            });
 
         await Promise.race([
           Promise.resolve(visualPlayer(item)),
@@ -715,12 +735,13 @@ if (timeline.querySelector(`[data-sequence="${item.sequence}"]`)) return;
           error,
         );
       } finally {
+        visualSettled = true;
         if (timeoutId !== null) {
           window.clearTimeout(timeoutId);
         }
       }
 
-      addEventImmediate(item, false);
+      if (!reportShown && !finalising) addEventImmediate(item, false);
     }
 
     async function postJson(endpoint, payload) {
@@ -750,6 +771,110 @@ if (timeline.querySelector(`[data-sequence="${item.sequence}"]`)) return;
         article.append(el("small", "", item.evidence.map((entry) => `${entry.label}: ${entry.value}`).join(" · ")));
       }
       return article;
+    }
+
+    const DEVELOPMENT_ORDER = ["pace", "shooting", "passing", "dribbling", "defending", "physical"];
+    const DEVELOPMENT_SHORT = {
+      pace: "PAC",
+      shooting: "SHO",
+      passing: "PAS",
+      dribbling: "DRI",
+      defending: "DEF",
+      physical: "PHY",
+    };
+
+    function buildDevelopmentReport(payload) {
+      const report = payload.report || {};
+      const data = payload.development;
+      const panel = el("section", "panel post-match-development");
+      panel.append(
+        el("p", "eyebrow", "PLAYER DEVELOPMENT"),
+        el("h2", "", "What this matchweek changed"),
+      );
+
+      if (!data || Number(data.schema_version) !== 2) {
+        panel.append(el("p", "muted", report.development_summary || "Development settled."));
+        return panel;
+      }
+
+      const matchXp = data.match_xp || {};
+      const trainingXp = data.training_xp || {};
+      const matchEntries = DEVELOPMENT_ORDER
+        .map((name) => [name, Math.max(0, Number(matchXp[name] || 0))])
+        .filter(([, value]) => value > 0);
+      const trainingEntries = DEVELOPMENT_ORDER
+        .map((name) => [name, Math.max(0, Number(trainingXp[name] || 0))])
+        .filter(([, value]) => value > 0);
+      const matchTotal = matchEntries.reduce((total, [, value]) => total + value, 0);
+      const trainingTotal = trainingEntries.reduce((total, [, value]) => total + value, 0);
+
+      const totals = el("div", "offer-chips");
+      totals.append(
+        el("span", "", `Match XP: +${matchTotal}`),
+        el("span", "", `Training XP: +${trainingTotal}`),
+      );
+      const overallBefore = Number(data.overall_before || 0);
+      const overallAfter = Number(data.overall || 0);
+      if (overallAfter > 0) {
+        totals.append(
+          el(
+            "span",
+            "",
+            overallBefore > 0 && overallAfter !== overallBefore
+              ? `OVR: ${overallBefore} → ${overallAfter}`
+              : `OVR: ${overallAfter}`,
+          ),
+        );
+      }
+      panel.append(totals);
+
+      function appendXpBlock(label, entries, emptyText) {
+        panel.append(el("p", "eyebrow", label));
+        if (!entries.length) {
+          panel.append(el("p", "muted", emptyText));
+          return;
+        }
+        const grid = el("div", "match-stat-grid");
+        entries.forEach(([name, value]) => {
+          const box = el("div");
+          box.append(
+            el("span", "", DEVELOPMENT_SHORT[name] || name.toUpperCase()),
+            el("strong", "", `+${value} XP`),
+          );
+          grid.append(box);
+        });
+        panel.append(grid);
+      }
+
+      appendXpBlock("MATCH XP", matchEntries, "No match XP earned.");
+      appendXpBlock("TRAINING XP", trainingEntries, "No training XP added this matchweek.");
+
+      panel.append(el("p", "eyebrow", "BREAKTHROUGHS"));
+      const upgrades = Array.isArray(data.upgrades) ? data.upgrades : [];
+      if (upgrades.length) {
+        const list = el("div", "report-list");
+        upgrades.forEach((upgrade) => {
+          const name = DEVELOPMENT_SHORT[upgrade.attribute] || String(upgrade.attribute || "").toUpperCase();
+          const article = el("article", "analysis-item compact");
+          article.append(
+            el("h3", "", `${name} ${upgrade.from} → ${upgrade.to}`),
+            el("p", "", "Attribute upgrade converted from banked development XP."),
+          );
+          list.append(article);
+        });
+        panel.append(list);
+      } else {
+        panel.append(el("p", "muted", "No attribute crossed a threshold. XP stays banked toward the next breakthrough."));
+      }
+
+      panel.append(el("p", "eyebrow", "BANKED XP AFTER SETTLEMENT"));
+      const banked = el("div", "offer-chips");
+      DEVELOPMENT_ORDER.forEach((name) => {
+        const value = Math.max(0, Number(data.meters_after?.[name] || 0));
+        banked.append(el("span", "", `${DEVELOPMENT_SHORT[name]} ${value} XP`));
+      });
+      panel.append(banked);
+      return panel;
     }
 
     function buildReport(payload) {
@@ -824,6 +949,7 @@ if (timeline.querySelector(`[data-sequence="${item.sequence}"]`)) return;
       output.append(fitness, development);
       storyGrid.append(story, output);
       root.append(storyGrid);
+      root.append(buildDevelopmentReport(payload));
 
       const insightGrid = el("div", "report-grid three-column");
       [["POSITIVE IMPACT", analysis.strengths, false], ["PERFORMANCE REVIEW", analysis.gaps, false], ["NEXT TRAINING BLOCK", analysis.coaching_actions, true]].forEach(([heading, items, includeFocus]) => {
@@ -859,6 +985,8 @@ if (timeline.querySelector(`[data-sequence="${item.sequence}"]`)) return;
     function renderReport(payload) {
       if (reportShown) return;
       reportShown = true;
+      stage.dataset.replayFinished = "true";
+      window.FootyMatchVisuals?.finish();
       const finalScore = payload.final_score;
       homeScore.textContent = finalScore.home;
       awayScore.textContent = finalScore.away;
@@ -879,6 +1007,8 @@ if (timeline.querySelector(`[data-sequence="${item.sequence}"]`)) return;
     async function finalise(skip = false) {
       if (finalising || reportShown) return;
       finalising = true;
+      window.FootyMatchVisuals?.cancelEvent();
+      if (skip) { paused = true; syncVisualControls(); }
       window.clearTimeout(timer);
       status.textContent = skip ? "Skipping to full time" : "Finalising";
       pauseButton.disabled = true;
@@ -887,13 +1017,14 @@ if (timeline.querySelector(`[data-sequence="${item.sequence}"]`)) return;
         const payload = await postJson(completeEndpoint, {skip});
         const events = payload.remaining_events || [];
         for (let index = cursor; index < events.length; index += 1) {
-          await addEvent(events[index], skip);
+          await addEvent(events[index], skip || alreadyCompleted);
           cursor = index + 1;
         }
         renderReport(payload);
       } catch (error) {
         finalising = false;
         paused = true;
+        syncVisualControls();
         status.textContent = "Completion failed";
         pauseButton.disabled = false;
         finishButton.disabled = false;
@@ -902,26 +1033,29 @@ if (timeline.querySelector(`[data-sequence="${item.sequence}"]`)) return;
     }
 
     async function tick() {
-      if (paused || finalising || reportShown) return;
+      if (paused || finalising || reportShown || advancing || skipInProgress) return;
+      advancing = true;
       try {
         const payload = await postJson(advanceEndpoint, {cursor});
         if (payload.completed) {
           await finalise(false);
           return;
         }
+        if (finalising || reportShown) return;
         await addEvent(payload.event);
         cursor = payload.cursor;
         if (payload.event?.kind === "full_time" || !payload.has_more) {
           await finalise(false);
           return;
         }
-        timer = window.setTimeout(tick, interval());
+        if (!paused && !finalising && !reportShown) timer = window.setTimeout(tick, interval());
       } catch (error) {
         paused = true;
+        syncVisualControls();
         status.textContent = "Replay paused · connection error";
         pauseButton.innerHTML = "Retry <kbd>Space</kbd>";
         showToast(error.message || "Replay request failed.", true);
-      }
+      } finally { advancing = false; }
     }
 
     const MAJOR_EVENT_KINDS = new Set([
@@ -957,7 +1091,7 @@ if (timeline.querySelector(`[data-sequence="${item.sequence}"]`)) return;
     }
 
     async function skipToNextMajorEvent() {
-      if (finalising || reportShown || skipInProgress) return;
+      if (finalising || reportShown || skipInProgress || advancing) return;
 
       skipInProgress = true;
       window.clearTimeout(timer);
@@ -996,6 +1130,7 @@ if (timeline.querySelector(`[data-sequence="${item.sequence}"]`)) return;
         }
       } catch (error) {
         paused = true;
+        syncVisualControls();
         status.textContent = "Replay paused · connection error";
         showToast(
           error.message || "Could not skip to next event.",
@@ -1048,6 +1183,7 @@ if (timeline.querySelector(`[data-sequence="${item.sequence}"]`)) return;
     function togglePause() {
       if (finalising || reportShown) return;
       paused = !paused;
+      syncVisualControls();
       status.textContent = paused ? "Paused" : "Playing";
       pauseButton.innerHTML = paused ? "Resume <kbd>Space</kbd>" : "Pause <kbd>Space</kbd>";
       window.clearTimeout(timer);
@@ -1055,9 +1191,11 @@ if (timeline.querySelector(`[data-sequence="${item.sequence}"]`)) return;
     }
 
     function setSpeed(nextSpeed) {
+      if (reportShown || finalising) return;
       const next = Number(nextSpeed);
       speed = [1, 2, 4].includes(next) ? next : 1;
       updateSpeedButtons();
+      syncVisualControls();
       if (!paused && !finalising && !reportShown) {
         window.clearTimeout(timer);
         timer = window.setTimeout(tick, 60);

@@ -134,7 +134,7 @@ def test_throw_in_and_free_kick_are_restarts_not_shots():
 
 def test_halftime_waits_until_first_revealed_event_after_45():
     text = Path("app/static/match/event-choreography.js").read_text()
-    assert "minute <= 45" in text
+    assert "Number(item.minute) > 45" in text
     assert "minute < 45" not in text
 
 
@@ -156,8 +156,8 @@ def test_match_engine_transition_handlers_exist():
 def test_choreography_routes_revealed_transitions():
     text = Path("app/static/match/event-choreography.js").read_text()
     for marker in (
-        'kind === "SUBSTITUTION_ON"', 'kind === "SUBSTITUTION_OFF"',
-        'kind === "RED_CARD"', '"SET_PIECE"',
+        "kind.startsWith('SUBSTITUTION_')",
+        "kind === 'RED_CARD'", "'SET_PIECE'",
         "handleHalftime", "handleSubstitution", "handleCard",
     ):
         assert marker in text
@@ -259,7 +259,7 @@ def test_skip_to_next_major_event_reveals_sequentially_through_existing_endpoint
 def test_full_time_completion_path_remains_existing_authoritative_path():
     text = Path("app/static/app.js").read_text()
     assert "postJson(completeEndpoint, {skip})" in text
-    assert "await addEvent(events[index], skip);" in text
+    assert "await addEvent(events[index], skip || alreadyCompleted);" in text
 
 
 def test_hidden_tab_pause_and_resume_still_prevent_delta_spike():
@@ -383,3 +383,56 @@ def test_final_review_replay_speed_contract_is_1_2_4_end_to_end():
 
     assert 'if (["1", "2", "4"].includes(key)) {' in text
     assert 'if (["1", "2", "3"].includes(key)) {' not in text
+
+
+
+def test_task7_match_markup_contains_no_future_development_payload():
+    source = Path("app/templates/match.html").read_text()
+    for token in (
+        "match_xp",
+        "training_xp",
+        "meters_after",
+        "attributes_before",
+        "total_xp",
+    ):
+        assert token not in source
+
+
+def test_task7_post_match_report_has_structured_development_renderer():
+    text = Path("app/static/app.js").read_text()
+    marker = "function buildDevelopmentReport(payload)"
+    assert marker in text
+    start = text.index(marker)
+    end = text.index("function buildReport(payload)", start)
+    block = text[start:end]
+    for token in (
+        "PLAYER DEVELOPMENT",
+        "MATCH XP",
+        "TRAINING XP",
+        "BREAKTHROUGHS",
+        "BANKED XP AFTER SETTLEMENT",
+        "DEVELOPMENT_SHORT",
+    ):
+        assert token in block
+
+
+def test_task7_development_renderer_uses_text_safe_dom_construction():
+    text = Path("app/static/app.js").read_text()
+    marker = "function buildDevelopmentReport(payload)"
+    assert marker in text
+    start = text.index(marker)
+    end = text.index("function buildReport(payload)", start)
+    block = text[start:end]
+    assert "innerHTML" not in block
+    assert "el(" in block
+    helper_start = text.index("function el(")
+    helper_end = text.index("function reportItem(", helper_start)
+    assert "textContent" in text[helper_start:helper_end]
+
+
+def test_task7_build_report_mounts_development_only_in_final_report():
+    text = Path("app/static/app.js").read_text()
+    start = text.index("function buildReport(payload)")
+    end = text.index("function renderReport(payload)", start)
+    block = text[start:end]
+    assert "root.append(buildDevelopmentReport(payload));" in block

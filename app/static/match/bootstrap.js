@@ -5,6 +5,8 @@ import {createCameraController} from "./camera.js";
 import {createAudioController} from "./audio.js";
 import {createEventChoreography} from "./event-choreography.js";
 
+import {createRendererBridge} from "./renderer-bridge.js";
+
 const root = document.getElementById("match-stage");
 const stage = document.getElementById("match-visual-stage");
 const canvas = document.getElementById("match-canvas");
@@ -99,7 +101,7 @@ async function boot() {
   const camera = createCameraController({reducedMotion});
   let visualEnabled = true;
 
-  const renderer = createRenderer({
+  const canvasRenderer = createRenderer({
     canvas,
     stage,
     pitch,
@@ -111,6 +113,45 @@ async function boot() {
     },
   });
 
+  const shell3d = document.getElementById("match-3d-shell");
+  const shell2d = document.getElementById("match-2d-shell");
+  const switcher = document.getElementById("match-view-switcher");
+  const status3d = document.getElementById("match-3d-status");
+  const controls = new AbortController();
+  const renderer = createRendererBridge({
+    fallback: canvasRenderer,
+    async load() {
+      const {createThreeRenderer} = await import("./three-renderer.js");
+      return createThreeRenderer({canvas: document.getElementById("match-3d-canvas"),
+        modelUrl: shell3d.dataset.modelSrc, plan, reducedMotion,
+        onError: error => { renderer.fail(error); engine.repaint(); }});
+    },
+    onMode(mode, available) {
+      shell3d.hidden = mode !== "3d";
+      shell3d.setAttribute("aria-hidden", String(mode !== "3d"));
+      shell2d.hidden = mode !== "2d";
+      switcher.hidden = false;
+      for (const button of switcher.querySelectorAll("[data-match-view-target]")) {
+        const selected = button.dataset.matchViewTarget === mode;
+        button.disabled = button.dataset.matchViewTarget === "3d" && !available;
+        button.classList.toggle("active", selected);
+        button.setAttribute("aria-pressed", String(selected));
+      }
+      if (available) status3d.textContent = "Live match · your player marked in gold";
+    },
+    onError(error) {
+      console.warn("3D unavailable; tactical view active:", error);
+      status3d.textContent = "Tactical view · 3D unavailable";
+    },
+  });
+  switcher.hidden = false;
+  switcher.addEventListener("click", event => {
+    const button = event.target.closest("[data-match-view-target]");
+    if (button) renderer.select(button.dataset.matchViewTarget);
+  }, {signal: controls.signal});
+  document.getElementById("match-camera-mode")?.addEventListener("change", event => {
+    renderer.setCameraMode(event.target.value);
+  }, {signal: controls.signal});
   const tactical = createTacticalEngine(plan);
 
   const engine = createMatchEngine({
@@ -162,8 +203,14 @@ async function boot() {
   });
 
   window.FootyMatchVisuals = {
+    pause: () => engine.pause(), resume: () => engine.resume(),
+    setSpeed: value => engine.setSpeed(value),
+    finish() { choreography.cancel(); engine.finish(); },
+    cancelEvent: () => choreography.cancel(),
+    waitForSimulation: seconds => engine.waitForSimulation(seconds),
+    applyInstantEvent: item => choreography.applyInstantEvent(item),
     async playEvent(item) {
-      if (!item?.visual) return;
+      if (!item?.visual || engine.isFinished()) return;
 
       const kind = String(
         item.visual.kind
@@ -223,35 +270,12 @@ async function boot() {
   }
 
   const observer = new ResizeObserver(() => renderer.resize());
-  observer.observe(stage);
-
-  for (const button of document.querySelectorAll("[data-match-speed]")) {
-    button.addEventListener("click", () => {
-      engine.setSpeed(Number(button.dataset.matchSpeed || 1));
-    });
-  }
-
-  const pauseButton = document.getElementById("pause-replay");
-  if (pauseButton) {
-    pauseButton.addEventListener("click", () => {
-      if (engine.isPaused()) engine.resume();
-      else engine.pause();
-    });
-  }
-
-  window.addEventListener("keydown", (event) => {
-    if (event.repeat) return;
-    const tag = document.activeElement?.tagName || "";
-    if (
-      event.code === "Space"
-      && !["INPUT", "TEXTAREA", "SELECT", "BUTTON"].includes(tag)
-    ) {
-      if (engine.isPaused()) engine.resume();
-      else engine.pause();
-    }
-  });
+  observer.observe(root.querySelector(".match-broadcast"));
 
   window.addEventListener("beforeunload", () => {
+    controls.abort();
+    choreography.cancel();
+    window.clearTimeout(transitionTimer);
     delete window.FootyMatchVisuals;
     observer.disconnect();
     audio.destroy();
@@ -259,7 +283,13 @@ async function boot() {
     renderer.destroy();
   }, {once: true});
 
-  engine.start();
+  for (const item of (window.FootyRevealedEvents || [])) choreography.applyInstantEvent(item);
+  engine.setSpeed(Number(root.dataset.replaySpeed || 1));
+  if (root.dataset.replayPaused === "true") engine.pause();
+  if (root.dataset.replayFinished === "true") engine.finish();
+  else if (root.dataset.sessionStatus === "completed") { engine.pause(); engine.repaint(); }
+  else engine.start();
+  renderer.init();
 }
 
 function getMatchContext() {

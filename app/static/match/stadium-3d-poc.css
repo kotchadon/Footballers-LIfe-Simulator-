@@ -1,0 +1,15 @@
+/* Both views are projections of the same match state. */
+.match-broadcast {position:relative; overflow:hidden; border-radius:12px; background:#123325;}
+.match-view-switcher {display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin:12px 0;}
+.match-view-switcher[hidden], .match-3d-shell[hidden], #match-2d-shell[hidden] {display:none!important;}
+.match-view-switcher button {border:1px solid #50665a; background:#1c2a24; color:#ecf4ed; padding:9px 15px; border-radius:6px; cursor:pointer;}
+.match-view-switcher button.active {background:#dac775; color:#151e19; border-color:#dac775;}
+.match-view-switcher button:disabled {opacity:.5; cursor:default;}
+.match-3d-status {font-size:12px; color:#b9c9ba;}
+.match-3d-shell {position:relative; width:100%; aspect-ratio:16/9; min-height:260px;}
+#match-3d-canvas {position:absolute; inset:0; display:block; width:100%; height:100%;}
+.match-camera-control {display:flex; justify-content:flex-end; align-items:center; gap:8px; margin:8px 0; font-size:12px;}
+.match-camera-control select {padding:5px; background:#18281e; color:#fff; border:1px solid #647164; border-radius:4px;}
+.match-broadcast > .match-event-overlay {pointer-events:none; bottom:12px; top:auto; max-width:calc(100% - 24px);}
+.match-broadcast > .match-transition-overlay {pointer-events:none; z-index:4;}
+@media(max-width:600px) {.match-3d-shell {aspect-ratio:4/3; min-height:230px;} .match-3d-status {flex-basis:100%;}}

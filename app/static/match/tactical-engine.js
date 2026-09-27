@@ -83,9 +83,9 @@ function initialActor(actor, plan) {
     vx: 0,
     vy: 0,
     heading: actor.team === "home" ? 0 : Math.PI,
-    maxSpeed: 7 + pace * .09,
-    acceleration: 18 + acceleration * .25,
-    deceleration: 28 + acceleration * .24,
+    maxSpeed: 5.8 + pace * .033,
+    acceleration: 4 + acceleration * .035,
+    deceleration: 7 + acceleration * .035,
     staminaFactor: clamp(Number(actor.attributes?.stamina || 72) / 100, .45, 1),
     animationState: actor.role === "GK" ? "GK_SET" : null,
     tacticalIntent: "holdShape",
@@ -321,8 +321,9 @@ export function createTacticalEngine(plan) {
       attackingPhase,
       sampleSeed(plan.seed, "carrier", phaseIndex, possessionTeam, attackingPhase),
     );
-    if (!ball.action) {
-      ballController.control(carrier?.actorId || null);
+    if (!ball.action && carrier && ball.ownerActorId !== carrier.actorId) {
+      const distance = Math.hypot((ball.x-carrier.x)*1.05,(ball.y-carrier.y)*.68);
+      ballController.pass({...ball}, carrier, {targetActorId:carrier.actorId, duration:Math.max(.45,distance/18),maxHeight:.3});
     }
     passClock = 0;
     nextPassAt = .85 + rng() * .95;
@@ -548,7 +549,8 @@ export function createTacticalEngine(plan) {
     const candidates = actors.filter(
       (actor) => actor.team === team && actor.role !== "GK" && !actor.isUser,
     );
-    const outgoing =
+    const hasVacancy = actors.filter(a => a.team === team).length < (teams[team].redCard ? 10 : 11);
+    const outgoing = hasVacancy ? null :
       candidates.find((actor) => actor.role === role)
       || candidates.slice().sort(
         (a, b) => Math.abs(b.anchorX - 50) - Math.abs(a.anchorX - 50),
@@ -590,9 +592,11 @@ export function createTacticalEngine(plan) {
       actor.x = 100 - actor.x;
       actor.anchorX = 100 - actor.anchorX;
       actor.targetX = 100 - actor.targetX;
-      actor.heading = actor.heading === 0 ? Math.PI : 0;
+      actor.heading = Math.PI - actor.heading;
+      actor.vx *= -1;
     }
     ball.x = 100 - ball.x;
+    if (ball.action) { ball.action.from.x = 100-ball.action.from.x; ball.action.to.x = 100-ball.action.to.x; }
     if (!ball.action && ball.ownerActorId) {
       ballController.control(ball.ownerActorId);
     }
@@ -603,6 +607,7 @@ export function createTacticalEngine(plan) {
 
   function reshapeForRedCard(team, preferredActorId = null) {
     const side = team === "away" ? "away" : "home";
+    if (preferredActorId && !actors.some(a => a.actorId === preferredActorId)) return null;
     let removed = preferredActorId ? removeActor(preferredActorId) : null;
 
     if (!removed) {
@@ -846,8 +851,19 @@ export function createTacticalEngine(plan) {
             y: 50,
           };
 
+    // Revealed shot staging is a broadcast cut; outcome stays server-owned.
+    if (teams[side].direction < 0 && start.x > 50) { start.x = 100-start.x; target.x = 100-target.x; }
+    if (teams[side].direction > 0 && start.x < 50) { start.x = 100-start.x; target.x = 100-target.x; }
+    const direction = teams[side].direction;
+    if (payload.outcome === "GOAL") { target.x = direction > 0 ? 101 : -1; target.y = clamp(target.y,46,54); }
+    if (payload.outcome === "MISS") { target.x = direction > 0 ? 103 : -3; target.y = target.y < 50 ? 42 : 58; }
+    if (payload.outcome === "SAVE") {
+      const goalie = keeperForAttackingSide(side);
+      if (goalie) { target.x = goalie.x; target.y = goalie.y; }
+    }
     actor.x = start.x;
     actor.y = start.y;
+    actor.heading = Math.atan2(target.y-start.y,target.x-start.x);
     actor.vx = 0;
     actor.vy = 0;
 
@@ -921,9 +937,9 @@ export function createTacticalEngine(plan) {
     if (action === "GK_CATCH") {
       animationController.play(
         keeper.actorId,
-        "GK_SET",
+        "GK_CATCH",
         {
-          duration: .3,
+          duration: .6,
           priority: 10,
         },
       );
@@ -1051,7 +1067,7 @@ export function createTacticalEngine(plan) {
     eventClock += dt;
     animationController.update(dt);
 
-    if (phaseElapsed >= phaseDuration) {
+    if (phaseElapsed >= phaseDuration && eventClock >= eventOverrideUntil) {
       resetPhase();
     }
 
@@ -1080,7 +1096,8 @@ export function createTacticalEngine(plan) {
           ? .86 + actor.staminaFactor * .14
           : 1;
 
-      integrateMovement(
+      const actionAnimation = animationController.getState(actor.actorId);
+      if (!["SHOOT", "GK_DIVE", "CELEBRATE"].includes(actionAnimation)) integrateMovement(
         actor,
         target,
         dt,
@@ -1091,7 +1108,7 @@ export function createTacticalEngine(plan) {
         },
       );
 
-      const actionAnimation = animationController.getState(actor.actorId);
+      actor.animationProgress = animationController.getProgress(actor.actorId);
 
       if (actionAnimation) {
         actor.animationState = actionAnimation;
@@ -1109,6 +1126,17 @@ export function createTacticalEngine(plan) {
       }
     }
 
+    // Resolve body overlap gently in metres, without deciding fouls or possession.
+    for (let i=0;i<actors.length;i++) for (let j=i+1;j<actors.length;j++) {
+      const a=actors[i],b=actors[j];
+      if ([a.animationState,b.animationState].some(state=>["SHOOT","GK_DIVE"].includes(state))) continue;
+      let dx=(b.x-a.x)*1.05,dy=(b.y-a.y)*.68,d=Math.hypot(dx,dy);
+      if (d>=.52) continue;
+      if (d<.001) {dx=(i+j)%2?1:-1;dy=0;d=1;}
+      const push=Math.min(.04,(.52-Math.hypot((b.x-a.x)*1.05,(b.y-a.y)*.68))/2);
+      a.x=clamp(a.x-dx/d*push/1.05,0,100);a.y=clamp(a.y-dy/d*push/.68,0,100);
+      b.x=clamp(b.x+dx/d*push/1.05,0,100);b.y=clamp(b.y+dy/d*push/.68,0,100);
+    }
     updateBall(dt);
 
     return {
@@ -1130,6 +1158,9 @@ export function createTacticalEngine(plan) {
     prepareSetPiece,
     beginAuthoritativeEvent,
     playKeeperAction,
+    celebrate(side) {
+      for (const actor of actors.filter(a=>a.team===side&&a.role!=="GK")) animationController.play(actor.actorId,"CELEBRATE",{duration:.7,priority:10});
+    },
     getState() {
       return {
         actors,

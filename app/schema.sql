@@ -98,6 +98,13 @@ CREATE TABLE IF NOT EXISTS player_attributes (
     dribbling INTEGER NOT NULL DEFAULT 50,
     defending INTEGER NOT NULL DEFAULT 50,
     physical INTEGER NOT NULL DEFAULT 50,
+    pace_xp INTEGER NOT NULL DEFAULT 0,
+    shooting_xp INTEGER NOT NULL DEFAULT 0,
+    passing_xp INTEGER NOT NULL DEFAULT 0,
+    dribbling_xp INTEGER NOT NULL DEFAULT 0,
+    defending_xp INTEGER NOT NULL DEFAULT 0,
+    physical_xp INTEGER NOT NULL DEFAULT 0,
+    legacy_xp_migrated INTEGER NOT NULL DEFAULT 0,
     FOREIGN KEY (career_id) REFERENCES careers(id) ON DELETE CASCADE
 );
 

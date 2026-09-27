@@ -8,6 +8,7 @@ import uuid
 from datetime import datetime, timezone
 
 from .db import get_db
+from .progression import ATTRIBUTES, apply_attribute_xp, match_development_xp, training_development_xp, upgrade_cost
 from .match_visuals import build_visual_plan, visual_event_metadata
 from .calendar_engine import generate_season_calendar, get_calendar, get_week_context
 from .economy import (
@@ -181,8 +182,9 @@ def create_career(player_name, nationality, position):
     db.execute(
         """
         INSERT INTO player_attributes(
-            career_id, pace, shooting, passing, dribbling, defending, physical
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            career_id, pace, shooting, passing, dribbling, defending, physical,
+            legacy_xp_migrated
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, 1)
         """,
         (career_id, attributes["pace"], attributes["shooting"], attributes["passing"], attributes["dribbling"], attributes["defending"], attributes["physical"]),
     )
@@ -215,7 +217,9 @@ def get_active_career():
                leagues.name AS league_name, leagues.code AS league_code,
                leagues.tier AS league_tier, leagues.reputation AS league_reputation,
                countries.name AS country_name, countries.code AS country_code,
-               pa.pace, pa.shooting, pa.passing, pa.dribbling, pa.defending, pa.physical
+               pa.pace, pa.shooting, pa.passing, pa.dribbling, pa.defending, pa.physical,
+               pa.pace_xp, pa.shooting_xp, pa.passing_xp,
+               pa.dribbling_xp, pa.defending_xp, pa.physical_xp
         FROM careers
         JOIN clubs ON clubs.id = careers.club_id
         LEFT JOIN leagues ON leagues.id = careers.league_id
@@ -465,6 +469,19 @@ def get_active_match_session(career_id):
     ).fetchone()
 
 
+def _week_has_settled_match(db, career):
+    """A week's training is included only in its first settled club match."""
+    return db.execute(
+        """
+        SELECT 1 FROM match_sessions ms
+        JOIN fixtures f ON f.id=ms.player_fixture_id
+        WHERE ms.career_id=? AND ms.season_number=? AND ms.status='completed'
+          AND COALESCE(f.calendar_week,f.week)=? LIMIT 1
+        """,
+        (career["id"], career["season_number"], career["calendar_week"]),
+    ).fetchone() is not None
+
+
 def _build_match_snapshot(career, fixtures, seed):
     rng = random.Random(seed)
     simulation_start_week = int(career.get("simulation_start_week", career["current_week"]))
@@ -590,15 +607,16 @@ def _build_match_snapshot(career, fixtures, seed):
     reputation_gain = performance["goals"] * 2 + performance["assists"] + int(performance["motm"])
 
     appeared = selection_status in {"starter", "substitute"}
-    match_xp = 0
-    if appeared:
-        match_xp = max(2, round(performance["rating"] * 1.5)) + performance["goals"] * 5 + performance["assists"] * 3
-    training_xp = 0
     effective_injury_weeks = max(0, career["injured_weeks"] - idle_weeks)
-    if effective_injury_weeks == 0 and training_focus != "recovery":
-        training_xp = training_plan["weekly_xp"] * elapsed_weeks
-        if appeared and performance["rating"] >= 7.5:
-            training_xp += 2
+    performance["minutes"] = minutes
+    match_xp = match_development_xp(performance)
+    training_xp = training_development_xp(
+        focus=training_focus, position=career["position"],
+        season_phase=career["season_phase"], minutes=minutes,
+        unavailable_injured=effective_injury_weeks > 0,
+    )
+    if career.get("training_already_awarded", False):
+        training_xp = dict.fromkeys(ATTRIBUTES, 0)
 
     injury_weeks = effective_injury_weeks
     if selection_status == "injured":
@@ -613,23 +631,33 @@ def _build_match_snapshot(career, fixtures, seed):
         suspension_matches = max(suspension_matches, 1)
         yellow_accumulation -= 5
 
-    development_seed = rng.getrandbits(63)
-    development = _plan_development(
-        career,
-        match_xp + training_xp,
-        training_focus,
-        development_seed,
-    )
+    attributes_before = {name: int(career[name]) for name in ATTRIBUTES}
+    meters_before = {name: int(career[f"{name}_xp"]) for name in ATTRIBUTES}
+    total_xp = {name: match_xp[name] + training_xp[name] for name in ATTRIBUTES}
+    result = apply_attribute_xp(
+        attributes=attributes_before, meters=meters_before, gains=total_xp,
+        position=career["position"], potential=career["potential"],
+    ) if any(total_xp.values()) else {
+        "attributes": dict(attributes_before), "meters": dict(meters_before),
+        "overall": career["overall"], "upgrades": [],
+    }
+    development = {
+        "schema_version": 2,
+        "match_xp": match_xp, "training_xp": training_xp, "total_xp": total_xp,
+        "attributes_before": attributes_before, "meters_before": meters_before,
+        "attributes": result["attributes"], "meters_after": result["meters"],
+        "overall_before": career["overall"], "overall": result["overall"],
+        "potential_before": career["potential"], "upgrades": result["upgrades"],
+    }
+    labels = dict(zip(ATTRIBUTES, ("PAC", "SHO", "PAS", "DRI", "DEF", "PHY")))
+    def xp_text(gains):
+        return " · ".join(f"{labels[name]} +{gains[name]} XP" for name in ATTRIBUTES if gains[name]) or "0 XP"
+    development_summary = f"Match development: {xp_text(match_xp)}. Training: {xp_text(training_xp)}."
     if development["upgrades"]:
-        upgraded = ", ".join(name.title() for name in development["upgrades"])
-        development_summary = f"Development breakthrough: {upgraded} +1. XP now {development['xp']}/100."
-    elif training_focus == "recovery":
-        development_summary = f"Recovery week completed. Fitness restored to {fitness_after}%."
-    else:
-        development_summary = (
-            f"{training_plan['label']} added {training_xp} training XP; "
-            f"match performance added {match_xp} XP. Progress: {development['xp']}/100."
+        transitions = " · ".join(
+            f"{labels[item['attribute']]} {item['from']} → {item['to']}" for item in development["upgrades"]
         )
+        development_summary += f" Development breakthrough: {transitions}."
 
     weekly_income = 0  # Salary is processed once per calendar week by the finance engine.
     bonus = performance["goals"] * 75 + performance["assists"] * 40 + int(performance["motm"]) * 100
@@ -681,7 +709,6 @@ def _build_match_snapshot(career, fixtures, seed):
             "match_xp": match_xp,
             "training_xp": training_xp,
             "development": development,
-            "development_seed": development_seed,
             "development_summary": development_summary,
             "weekly_income": weekly_income,
             "bonus": bonus,
@@ -701,7 +728,8 @@ def prepare_next_match(career_id, seed=None):
     career = db.execute(
         """
         SELECT careers.*, clubs.strength AS club_strength,
-               pa.pace, pa.shooting, pa.passing, pa.dribbling, pa.defending, pa.physical
+               pa.pace, pa.shooting, pa.passing, pa.dribbling, pa.defending, pa.physical,
+               pa.pace_xp, pa.shooting_xp, pa.passing_xp, pa.dribbling_xp, pa.defending_xp, pa.physical_xp
         FROM careers
         JOIN clubs ON clubs.id = careers.club_id
         JOIN player_attributes pa ON pa.career_id = careers.id
@@ -756,6 +784,7 @@ def prepare_next_match(career_id, seed=None):
         return None
 
     career_payload = dict(career)
+    career_payload["training_already_awarded"] = _week_has_settled_match(db, career)
     career_payload["simulation_start_week"] = career["current_week"]
     career_payload["simulation_end_week"] = end_week
     seed_value = int(seed) if seed is not None else secrets.randbits(63)
@@ -906,6 +935,47 @@ def _build_final_analysis(snapshot):
     )
 
 
+def _public_settled_development(development):
+    """Return only post-settlement progression details safe for the final report."""
+    if not isinstance(development, dict) or int(development.get("schema_version", 0) or 0) != 2:
+        return None
+
+    def clean_map(key):
+        source = development.get(key)
+        if not isinstance(source, dict):
+            source = {}
+        return {
+            name: max(0, int(source.get(name, 0) or 0))
+            for name in ATTRIBUTES
+        }
+
+    upgrades = []
+    for item in development.get("upgrades", []):
+        if not isinstance(item, dict):
+            continue
+        attribute = item.get("attribute")
+        if attribute not in ATTRIBUTES:
+            continue
+        before = int(item.get("from", 0) or 0)
+        after = int(item.get("to", before) or before)
+        upgrades.append({
+            "attribute": attribute,
+            "from": before,
+            "to": after,
+        })
+
+    return {
+        "schema_version": 2,
+        "match_xp": clean_map("match_xp"),
+        "training_xp": clean_map("training_xp"),
+        "meters_after": clean_map("meters_after"),
+        "attributes": clean_map("attributes"),
+        "overall_before": int(development.get("overall_before", development.get("overall", 0)) or 0),
+        "overall": int(development.get("overall", 0) or 0),
+        "upgrades": upgrades,
+    }
+
+
 def _completion_payload(snapshot, analysis, session_status="completed"):
     fixture = snapshot["fixture"]
     performance = snapshot["performance"]
@@ -916,6 +986,7 @@ def _completion_payload(snapshot, analysis, session_status="completed"):
         "player_team_is_home": fixture["player_team_is_home"],
         "week_results": snapshot["week_results"],
         "remaining_events": performance["events"],
+        "development": _public_settled_development(post_match.get("development")),
         "report": {
             "selection_status": performance["selection_status"],
             "minutes": performance["minutes"],
@@ -977,6 +1048,20 @@ def complete_match_session(public_id, career_id, allow_skip=False):
             db.rollback()
             return False, "Career state changed after this match was prepared.", None
 
+        development = snapshot["post_match"]["development"]
+        current_attributes = db.execute(
+            "SELECT * FROM player_attributes WHERE career_id=?", (career_id,),
+        ).fetchone()
+        if development.get("schema_version") == 2 and (
+            current_attributes is None
+            or any(current_attributes[name] != development["attributes_before"][name] for name in ATTRIBUTES)
+            or any(current_attributes[f"{name}_xp"] != development["meters_before"][name] for name in ATTRIBUTES)
+            or career["overall"] != development["overall_before"]
+            or career["potential"] != development["potential_before"]
+        ):
+            db.rollback()
+            return False, "Player development changed after this match was prepared.", None
+
         for result in snapshot["week_results"]:
             cursor = db.execute(
                 """
@@ -1017,13 +1102,28 @@ def complete_match_session(public_id, career_id, allow_skip=False):
 
         development = post_match["development"]
         attrs = development["attributes"]
+        if development.get("schema_version") == 2:
+            meters = development["meters_after"]
+        else:
+            # Finish legacy prepared matches without rerolling their sealed result.
+            # Migrate only their unspent global remainder, once, in this transaction.
+            meters = {name: current_attributes[f"{name}_xp"] for name in ATTRIBUTES}
+            focus = expected.get("training_focus", "balanced")
+            if focus not in ATTRIBUTES:
+                weights = POSITION_WEIGHTS.get(expected["position"], POSITION_WEIGHTS["CM"])
+                focus = max(ATTRIBUTES, key=lambda name: weights[name])
+            # A legacy snapshot's xp value is the sealed post-match remainder,
+            # not an incremental award. Replace the target meter with that
+            # remainder so startup-migrated pre-match XP is not counted twice.
+            meters[focus] = max(0, int(development.get("xp", 0)))
         db.execute(
             """
             UPDATE player_attributes
-            SET pace = ?, shooting = ?, passing = ?, dribbling = ?, defending = ?, physical = ?
-            WHERE career_id = ?
+            SET pace=?,shooting=?,passing=?,dribbling=?,defending=?,physical=?,
+                pace_xp=?,shooting_xp=?,passing_xp=?,dribbling_xp=?,defending_xp=?,physical_xp=?
+            WHERE career_id=?
             """,
-            (attrs["pace"], attrs["shooting"], attrs["passing"], attrs["dribbling"], attrs["defending"], attrs["physical"], career_id),
+            (*[attrs[name] for name in ATTRIBUTES], *[meters[name] for name in ATTRIBUTES], career_id),
         )
         db.execute(
             """
@@ -1042,7 +1142,7 @@ def complete_match_session(public_id, career_id, allow_skip=False):
                 performance["fitness_after"], post_match["morale_change"], post_match["reputation_gain"],
                 post_match["weekly_income"] + post_match["bonus"], post_match["injury_weeks"],
                 post_match["suspension_matches"], post_match["yellow_accumulation"],
-                development["xp"], development["overall"],
+                0, development["overall"],
                 (3 if performance["rating"] >= 7.5 else 1 if performance["rating"] >= 6.5 else -2 if post_match["appeared"] else -1),
                 development["overall"], career_id,
             ),
@@ -1168,19 +1268,53 @@ def play_next_week(career_id, seed=None):
     }
 
 def get_training_plan(career_id):
-    career = get_db().execute(
-        "SELECT training_focus, xp, fitness, injured_weeks FROM careers WHERE id = ?",
+    """Present persisted progress and a no-match estimate, never a sealed result."""
+    db = get_db()
+    career = db.execute(
+        """
+        SELECT c.*, pa.pace, pa.shooting, pa.passing, pa.dribbling, pa.defending, pa.physical,
+               pa.pace_xp, pa.shooting_xp, pa.passing_xp, pa.dribbling_xp, pa.defending_xp, pa.physical_xp
+        FROM careers c JOIN player_attributes pa ON pa.career_id=c.id
+        WHERE c.id=?
+        """,
         (career_id,),
     ).fetchone()
     if career is None:
         return None
     focus = career["training_focus"] if career["training_focus"] in TRAINING_FOCUS else "balanced"
+    attributes = {}
+    for name in ATTRIBUTES:
+        value, xp = career[name], career[f"{name}_xp"]
+        cost = upgrade_cost(value, career["overall"], career["potential"])
+        capped = value >= 99 or career["overall"] >= career["potential"]
+        attributes[name] = {
+            "value": value, "xp": xp, "cost": cost,
+            "percent": max(0, min(100, xp * 100 // cost)),
+            "capped": capped, "next_value": None if capped else value + 1,
+        }
+    settled = _week_has_settled_match(db, career)
+    preview = dict.fromkeys(ATTRIBUTES, 0) if settled else training_development_xp(
+        focus=focus, position=career["position"], season_phase=career["season_phase"],
+        minutes=0, unavailable_injured=career["injured_weeks"] > 0,
+    )
+    if settled:
+        status, note = "settled", "This week's training has already been awarded."
+    elif career["injured_weeks"] > 0:
+        status, note = "injured", "Injury recovery: no training XP this week."
+    elif focus == "recovery":
+        status, note = "recovery", "Recovery improves fitness and stress; no training XP."
+    else:
+        status = "estimate"
+        note = "No-match estimate. Match minutes reduce training XP; match-action XP is earned separately."
+        if career["season_phase"] == "preseason":
+            note += " Includes the preseason training bonus."
     return {
-        "focus": focus,
-        "xp": career["xp"],
-        "fitness": career["fitness"],
-        "injured_weeks": career["injured_weeks"],
-        **TRAINING_FOCUS[focus],
+        "focus": focus, "label": TRAINING_FOCUS[focus]["label"],
+        "description": TRAINING_FOCUS[focus]["description"],
+        "fitness": career["fitness"], "injured_weeks": career["injured_weeks"],
+        "attributes": attributes, "weekly_preview": preview,
+        "preview_status": status, "preview_note": note,
+        "locked": get_active_match_session(career_id) is not None,
     }
 
 
@@ -1546,6 +1680,15 @@ def accept_transfer_offer(career_id, offer_id):
                 offer["signing_bonus"], squad_level, trust, career_id,
             ),
         )
+        if offer["season_number"] == career["season_number"]:
+            db.execute(
+                """
+                UPDATE season_player_stats SET club_id=?
+                WHERE career_id=? AND season_number=?
+                """,
+                (offer["to_club_id"], career_id, career["season_number"]),
+            )
+
         if (
             offer["season_number"] == career["season_number"]
             and _transfer_can_rebuild_current_schedule(
@@ -1594,8 +1737,60 @@ def decline_transfer_offer(career_id, offer_id):
     return cursor.rowcount > 0
 
 
+def _history_season_label(career, season_number):
+    try:
+        current_start = int(str(career["season_label"]).split("/")[0])
+        start = current_start - (int(career["season_number"]) - int(season_number))
+        return f"{start}/{str(start + 1)[-2:]}"
+    except (TypeError, ValueError, KeyError):
+        return f"Season {season_number}"
+
+
+def _history_club_identity(db, career_id, club_id, season_number, preferred_league_id=None):
+    club = db.execute("SELECT id,name,league_id FROM clubs WHERE id=?", (club_id,)).fetchone()
+    if club is None:
+        return {"club_id": club_id, "club_name": "Unknown club", "league_id": preferred_league_id,
+                "league_name": None, "country_name": None}
+    league_id = preferred_league_id
+    if league_id is None:
+        membership = db.execute(
+            "SELECT league_id FROM world_memberships WHERE career_id=? AND season_number=? AND club_id=?",
+            (career_id, season_number, club_id),
+        ).fetchone()
+        if membership is not None:
+            league_id = membership["league_id"]
+    if league_id is None:
+        league_id = club["league_id"]
+    league = None
+    if league_id is not None:
+        league = db.execute(
+            """
+            SELECT l.id,l.name,c.name AS country_name
+            FROM leagues l LEFT JOIN countries c ON c.id=l.country_id
+            WHERE l.id=?
+            """,
+            (league_id,),
+        ).fetchone()
+    return {
+        "club_id": club_id,
+        "club_name": club["name"],
+        "league_id": league_id,
+        "league_name": league["name"] if league else None,
+        "country_name": league["country_name"] if league else None,
+    }
+
+
 def get_season_history(career_id):
-    return get_db().execute(
+    db = get_db()
+    career = db.execute(
+        "SELECT id,club_id,league_id,season_number,season_label FROM careers WHERE id=?",
+        (career_id,),
+    ).fetchone()
+    if career is None:
+        return []
+
+    rows = {}
+    for row in db.execute(
         """
         SELECT season_history.*, clubs.name AS club_name, leagues.name AS league_name,
                countries.name AS country_name
@@ -1606,18 +1801,193 @@ def get_season_history(career_id):
         WHERE season_history.career_id=? ORDER BY season_number DESC
         """,
         (career_id,),
-    ).fetchall()
+    ).fetchall():
+        item = dict(row)
+        item.update(is_current=False, is_recovered=False, is_complete=True)
+        rows[int(item["season_number"])] = item
 
-
-def get_club_history(career_id):
-    return get_db().execute(
+    transfers = db.execute(
         """
-        SELECT club_history.*, clubs.name AS club_name
-        FROM club_history JOIN clubs ON clubs.id = club_history.club_id
-        WHERE club_history.career_id = ? ORDER BY joined_season DESC, club_history.id DESC
+        SELECT id,season_number,from_club_id,to_club_id,to_league_id
+        FROM transfer_offers
+        WHERE career_id=? AND status='accepted'
+        ORDER BY season_number,id
         """,
         (career_id,),
     ).fetchall()
+    transfer_by_season = {int(row["season_number"]): dict(row) for row in transfers}
+
+    def add_recovered(season_number, season_label, club_id, league_id,
+                      appearances=0, goals=0, assists=0, rating_total=0.0,
+                      is_current=False):
+        season_number = int(season_number)
+        if season_number in rows:
+            return
+        identity = _history_club_identity(db, career_id, club_id, season_number, league_id)
+        appearances = int(appearances or 0)
+        rows[season_number] = {
+            "id": None, "career_id": career_id, "season_number": season_number,
+            "season_label": season_label, **identity,
+            "league_position": "—", "league_points": "—",
+            "appearances": appearances, "goals": int(goals or 0),
+            "assists": int(assists or 0),
+            "average_rating": round(float(rating_total or 0) / appearances, 2) if appearances else 0,
+            "awards": "", "is_current": bool(is_current),
+            "is_recovered": not bool(is_current), "is_complete": False,
+        }
+
+    for stats in db.execute(
+        "SELECT * FROM season_player_stats WHERE career_id=? ORDER BY season_number",
+        (career_id,),
+    ).fetchall():
+        season_number = int(stats["season_number"])
+        if season_number in rows:
+            continue
+        transfer = transfer_by_season.get(season_number)
+        current = season_number == int(career["season_number"])
+        if current:
+            club_id, league_id = career["club_id"], career["league_id"]
+        elif transfer:
+            club_id, league_id = transfer["to_club_id"], transfer["to_league_id"]
+        else:
+            club_id, league_id = stats["club_id"], None
+        add_recovered(
+            season_number, stats["season_label"], club_id, league_id,
+            stats["appearances"], stats["goals"], stats["assists"],
+            stats["rating_total"], is_current=current,
+        )
+
+    if transfers:
+        first = transfers[0]
+        first_season = max(1, int(first["season_number"]) - 1)
+        add_recovered(
+            first_season, _history_season_label(career, first_season),
+            first["from_club_id"], None,
+        )
+        for transfer in transfers:
+            season_number = int(transfer["season_number"])
+            add_recovered(
+                season_number, _history_season_label(career, season_number),
+                transfer["to_club_id"], transfer["to_league_id"],
+                is_current=season_number == int(career["season_number"]),
+            )
+
+    current_number = int(career["season_number"])
+    add_recovered(
+        current_number, career["season_label"], career["club_id"], career["league_id"],
+        is_current=True,
+    )
+    return [rows[number] for number in sorted(rows, reverse=True)]
+
+
+def get_club_history(career_id):
+    db = get_db()
+    career = db.execute(
+        "SELECT id,club_id,league_id,season_number,season_label FROM careers WHERE id=?",
+        (career_id,),
+    ).fetchone()
+    if career is None:
+        return []
+
+    journey = {}
+
+    def add(club_id, joined_season, left_season=None, reason="Career record",
+            preferred_league_id=None, persisted_id=None):
+        if club_id is None:
+            return
+        joined_season = max(1, int(joined_season or 1))
+        key = (int(club_id), joined_season)
+        identity = _history_club_identity(
+            db, career_id, int(club_id), joined_season, preferred_league_id
+        )
+        item = {
+            "id": persisted_id, "career_id": career_id, **identity,
+            "joined_season": joined_season,
+            "left_season": int(left_season) if left_season is not None else None,
+            "reason": reason,
+            "is_current": int(club_id) == int(career["club_id"]),
+        }
+        if key not in journey:
+            journey[key] = item
+        else:
+            existing = journey[key]
+            if existing["left_season"] is None and item["left_season"] is not None:
+                existing["left_season"] = item["left_season"]
+            if existing["reason"] in {"Career record", "Season record"} and reason:
+                existing["reason"] = reason
+            if not existing.get("league_name") and item.get("league_name"):
+                existing.update(
+                    league_id=item["league_id"],
+                    league_name=item["league_name"],
+                    country_name=item["country_name"],
+                )
+            existing["is_current"] = existing["is_current"] or item["is_current"]
+
+    for row in db.execute(
+        "SELECT * FROM club_history WHERE career_id=? ORDER BY joined_season,id",
+        (career_id,),
+    ).fetchall():
+        add(row["club_id"], row["joined_season"], row["left_season"], row["reason"], persisted_id=row["id"])
+
+    transfers = db.execute(
+        """
+        SELECT id,season_number,from_club_id,to_club_id,to_league_id
+        FROM transfer_offers
+        WHERE career_id=? AND status='accepted'
+        ORDER BY season_number,id
+        """,
+        (career_id,),
+    ).fetchall()
+
+    if transfers:
+        first = transfers[0]
+        source_rows = [x for x in journey.values() if x["club_id"] == int(first["from_club_id"])]
+        source_joined = min((x["joined_season"] for x in source_rows), default=1)
+        add(
+            first["from_club_id"], source_joined,
+            max(source_joined, int(first["season_number"]) - 1),
+            source_rows[0]["reason"] if source_rows else "Career start",
+        )
+        for i, transfer in enumerate(transfers):
+            joined = int(transfer["season_number"])
+            next_joined = int(transfers[i + 1]["season_number"]) if i + 1 < len(transfers) else None
+            left = max(joined, next_joined - 1) if next_joined is not None else None
+            add(
+                transfer["to_club_id"], joined, left, "Transfer",
+                preferred_league_id=transfer["to_league_id"],
+            )
+
+    for season in sorted(get_season_history(career_id), key=lambda x: int(x["season_number"])):
+        season_number = int(season["season_number"])
+        club_id = int(season["club_id"])
+        covered = any(
+            item["club_id"] == club_id
+            and item["joined_season"] <= season_number
+            and (item["left_season"] is None or item["left_season"] >= season_number)
+            for item in journey.values()
+        )
+        if not covered:
+            add(
+                club_id, season_number, reason="Season record",
+                preferred_league_id=season.get("league_id"),
+            )
+
+    current = [x for x in journey.values() if x["club_id"] == int(career["club_id"])]
+    if current:
+        latest = max(current, key=lambda x: x["joined_season"])
+        latest["left_season"] = None
+        latest["is_current"] = True
+    else:
+        add(
+            career["club_id"], career["season_number"], reason="Current club",
+            preferred_league_id=career["league_id"],
+        )
+
+    return sorted(
+        journey.values(),
+        key=lambda x: (x["joined_season"], x["id"] or 0),
+        reverse=True,
+    )
 
 
 def get_finances(career_id, limit=20):
@@ -1686,32 +2056,61 @@ def _apply_free_week_development(db, career, rng):
     focus = career["training_focus"] if career["training_focus"] in TRAINING_FOCUS else "balanced"
     if focus == "recovery":
         db.execute(
-            "UPDATE careers SET fitness=MIN(100,fitness+12), morale=MIN(100,morale+2), stress=MAX(0,stress-3) WHERE id=?",
+            "UPDATE careers SET xp=0, fitness=MIN(100,fitness+12), morale=MIN(100,morale+2), stress=MAX(0,stress-3) WHERE id=?",
             (career["id"],),
         )
         return "Recovery plan restored fitness and reduced stress."
-    xp_gain = 8 if career["season_phase"] == "preseason" else 5 if career["season_phase"] == "competitive" else 3
-    development = _plan_development(career, xp_gain, focus, rng.getrandbits(63))
-    attrs = development["attributes"]
-    db.execute(
-        """
-        UPDATE player_attributes SET pace=?,shooting=?,passing=?,dribbling=?,defending=?,physical=?
-        WHERE career_id=?
-        """,
-        (attrs["pace"], attrs["shooting"], attrs["passing"], attrs["dribbling"], attrs["defending"], attrs["physical"], career["id"]),
+    already_trained = _week_has_settled_match(db, career)
+    gains = dict.fromkeys(ATTRIBUTES, 0) if already_trained else training_development_xp(
+        focus=focus,
+        position=career["position"],
+        season_phase=career["season_phase"],
+        minutes=0,
+        unavailable_injured=career["injured_weeks"] > 0,
     )
+    overall = career["overall"]
+    upgrades = []
+    # Zero-training weeks must not convert previously banked XP either.
+    if any(gains.values()):
+        row = db.execute("SELECT * FROM player_attributes WHERE career_id=?", (career["id"],)).fetchone()
+        development = apply_attribute_xp(
+            attributes={name: row[name] for name in ATTRIBUTES},
+            meters={name: row[f"{name}_xp"] for name in ATTRIBUTES},
+            gains=gains,
+            position=career["position"],
+            potential=career["potential"],
+        )
+        attrs = development["attributes"]
+        meters = development["meters"]
+        overall = development["overall"]
+        upgrades = development["upgrades"]
+        db.execute(
+            """
+            UPDATE player_attributes
+            SET pace=?,shooting=?,passing=?,dribbling=?,defending=?,physical=?,
+                pace_xp=?,shooting_xp=?,passing_xp=?,dribbling_xp=?,defending_xp=?,physical_xp=?
+            WHERE career_id=?
+            """,
+            (*[attrs[name] for name in ATTRIBUTES], *[meters[name] for name in ATTRIBUTES], career["id"]),
+        )
     db.execute(
         """
-        UPDATE careers SET xp=?,overall=?,fitness=MIN(100,fitness+7),
+        UPDATE careers SET xp=0,overall=?,fitness=MIN(100,fitness+7),
             morale=MIN(100,morale+1),stress=MAX(0,stress-1),
             market_value=MAX(market_value,? * ? * 40)
         WHERE id=?
         """,
-        (development["xp"], development["overall"], development["overall"], development["overall"], career["id"]),
+        (overall, overall, overall, career["id"]),
     )
-    if development["upgrades"]:
-        return "Free-week breakthrough: " + ", ".join(item.title() for item in development["upgrades"]) + " +1."
-    return f"{TRAINING_FOCUS[focus]['label']} added {xp_gain} development XP."
+    if already_trained:
+        return "Match-week development already settled; fitness recovery completed."
+    if career["injured_weeks"] > 0:
+        return "Injury recovery restored fitness; no training XP awarded."
+    if upgrades:
+        return "Free-week breakthrough: " + ", ".join(
+            f"{item['attribute'].title()} {item['from']} → {item['to']}" for item in upgrades
+        ) + "."
+    return f"{TRAINING_FOCUS[focus]['label']} added {sum(gains.values())} development XP."
 
 
 def advance_calendar_week(career_id, seed=None):

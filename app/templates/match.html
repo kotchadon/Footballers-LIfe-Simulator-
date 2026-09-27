@@ -3,10 +3,12 @@
 {% block title %}Live Match Centre{% endblock %}
 {% block page_id %}match{% endblock %}
 {% block head_extra %}
-<link rel="stylesheet" href="{{ url_for('static', filename='match/match.css', v='1.7.0') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='match/match.css', v='2.0.0') }}">
+<link rel="stylesheet"
+      href="{{ url_for('static', filename='match/stadium-3d-poc.css', v='2.0.0') }}">
 {% endblock %}
 {% block scripts_extra %}
-<script type="module" src="{{ url_for('static', filename='match/bootstrap.js', v='1.7.0') }}"></script>
+<script type="module" src="{{ url_for('static', filename='match/bootstrap.js', v='2.0.0') }}"></script>
 {% endblock %}
 {% block content %}
 <section class="match-stage" id="match-stage"
@@ -34,7 +36,33 @@
   </div>
 
 
-  <div class="match-visual-shell">
+    <div class="match-view-switcher" id="match-view-switcher" hidden>
+    <button type="button"
+            data-match-view-target="3d"
+            aria-pressed="false"
+            disabled>Live 3D</button>
+    <button type="button"
+            data-match-view-target="2d"
+            class="active"
+            aria-pressed="true">Tactical 2D</button>
+    <span class="match-3d-status" id="match-3d-status" role="status" aria-live="polite">
+      Checking 3D support…
+    </span>
+  </div>
+
+  <label class="match-camera-control">Camera
+    <select id="match-camera-mode"><option value="broadcast">Broadcast</option><option value="wide">Whole pitch</option></select>
+  </label>
+  <div class="match-broadcast">
+  <div class="match-3d-shell"
+       id="match-3d-shell"
+       data-model-src="{{ url_for('static', filename='match/assets/footy-match-stadium-v1.glb', v='2') }}"
+       hidden
+       aria-hidden="true">
+    <canvas id="match-3d-canvas" aria-label="Live 3D football match. Your player is marked in gold."></canvas>
+  </div>
+
+<div class="match-visual-shell" id="match-2d-shell">
     <div class="match-visual-stage" id="match-visual-stage">
       <svg class="match-pitch-svg" id="match-pitch-svg" viewBox="0 0 1000 620" role="img" aria-label="Broadcast tactical football pitch">
         <defs>
@@ -56,14 +84,6 @@
         <path class="goal-frame" d="M965 285 L992 290 L992 370 L975 372"></path>
       </svg>
       <canvas id="match-canvas" class="match-canvas" aria-label="Animated live football visualization"></canvas>
-      <div class="match-event-overlay" id="match-event-overlay" aria-live="polite">
-        <span>TACTICAL FEED</span>
-        <strong id="match-visual-status">Loading teams…</strong>
-      </div>
-      <div class="match-transition-overlay" id="match-transition-overlay" aria-live="polite" hidden>
-        <span>MATCH STATE</span>
-        <strong id="match-transition-text">HALF TIME</strong>
-      </div>
       <div class="match-visual-fallback" id="match-visual-fallback" hidden>
         Visual feed unavailable · commentary replay remains active.
       </div>
@@ -73,6 +93,16 @@
       <span><i class="legend-user"></i>{{ session.player_name }}</span>
       <span><i class="legend-away"></i>{{ session.away_name }}</span>
     </div>
+  </div>
+
+      <div class="match-event-overlay" id="match-event-overlay" aria-live="polite">
+        <span>TACTICAL FEED</span>
+        <strong id="match-visual-status">Loading teams…</strong>
+      </div>
+      <div class="match-transition-overlay" id="match-transition-overlay" aria-live="polite" hidden>
+        <span>MATCH STATE</span>
+        <strong id="match-transition-text">HALF TIME</strong>
+      </div>
   </div>
 
 <div class="match-live-indicators" aria-label="Live match indicators">

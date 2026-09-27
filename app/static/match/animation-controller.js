@@ -47,6 +47,7 @@ export function createAnimationController() {
   return {
     play,
     getState,
+    getProgress(actorId) { const a = active.get(actorId); return a ? Math.min(1, a.elapsed / a.duration) : 0; },
     update,
     clear,
     cancelActor,
