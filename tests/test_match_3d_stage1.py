@@ -31,29 +31,14 @@ def test_stage1_files_are_local_and_present():
         assert path.is_file(), path
 
 
-def test_match_template_keeps_2d_and_adds_opt_in_3d_shell():
+def test_match_template_keeps_2d_and_adds_live_3d_canvas():
     source = MATCH_TEMPLATE.read_text()
-
-    assert 'id="match-canvas"' in source
-    assert 'id="match-visual-stage"' in source
-    assert 'id="match-2d-shell"' in source
-
-    assert 'id="match-view-switcher"' in source
-    assert 'id="match-3d-shell"' in source
-    assert 'id="match-3d-viewer"' in source
-    assert 'data-model-src=' in source
-
-    assert "vendor/model-viewer/config.js" in source
-    assert "vendor/model-viewer/model-viewer.min.js" in source
-    assert "match/stadium-3d-poc.js" in source
-    assert "match/stadium-3d-poc.css" in source
-
-    # Static viewer only: no animation loop is auto-started in Stage 1.
-    viewer_start = source.index('id="match-3d-viewer"')
-    viewer_end = source.index("</model-viewer>", viewer_start)
-    viewer_markup = source[viewer_start:viewer_end]
-    assert "autoplay" not in viewer_markup
-    assert "auto-rotate" not in viewer_markup
+    for name in ("match-canvas", "match-visual-stage", "match-2d-shell", "match-view-switcher", "match-3d-shell", "match-3d-canvas"):
+        assert f'id="{name}"' in source
+    assert "data-model-src=" in source
+    assert "<model-viewer" not in source
+    assert "vendor/model-viewer" not in source
+    assert "match/bootstrap.js" in source
 
 
 def test_stage1_bootstrap_is_presentation_only_and_fail_open():
@@ -110,14 +95,8 @@ def test_stadium_glb_is_self_contained_and_does_not_need_optional_decoders():
         for number in range(1, 12):
             assert f"{side}_{number:02d}" in names
 
-def test_stage1_hidden_viewer_forces_eager_model_loading():
-    source = Path("app/templates/match.html").read_text()
-
-    start = source.index('id="match-3d-viewer"')
-    end = source.index("</model-viewer>", start)
-    viewer_markup = source[start:end]
-
-    # The 3D shell intentionally starts hidden so the existing 2D renderer is
-    # always the safe first paint. model-viewer lazy-loads by default, so hidden
-    # preload must explicitly opt into eager loading or `load` can never fire.
-    assert 'loading="eager"' in viewer_markup
+def test_live_3d_loads_independently_of_hidden_canvas():
+    source = (STATIC / "match/bootstrap.js").read_text()
+    assert 'await import("./three-renderer.js")' in source
+    assert "renderer.init();" in source
+    assert "createRendererBridge" in source

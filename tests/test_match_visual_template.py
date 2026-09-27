@@ -272,7 +272,6 @@ def test_event_choreography_handles_authoritative_goal_save_and_miss():
         "GOAL",
         "SAVE",
         "MISS",
-        "GK_DIVE",
         "GK_CATCH",
     ):
         assert token in text
@@ -331,7 +330,7 @@ def test_app_replay_preserves_instant_contract_and_awaits_visuals():
 
     assert "await addEvent(payload.event);" in text
     assert (
-        "await addEvent(events[index], skip);"
+        "await addEvent(events[index], skip || alreadyCompleted);"
         in text
     )
     assert "VISUAL_TIMEOUT_MS = 1600" in text

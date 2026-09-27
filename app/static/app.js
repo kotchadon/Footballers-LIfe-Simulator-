@@ -475,6 +475,15 @@
     let finalising = false;
     let reportShown = false;
     let skipInProgress = false;
+    let advancing = false;
+    window.FootyRevealedEvents = [];
+    function syncVisualControls() {
+      stage.dataset.replayPaused = String(paused);
+      stage.dataset.replaySpeed = String(speed);
+      window.FootyMatchVisuals?.setSpeed(speed);
+      if (paused) window.FootyMatchVisuals?.pause();
+      else window.FootyMatchVisuals?.resume();
+    }
     const livePresentationSeen = new Set();
     const livePlayerStats = {
       goals: 0,
@@ -686,7 +695,9 @@ if (timeline.querySelector(`[data-sequence="${item.sequence}"]`)) return;
         )
       ) return;
 
-      if (instant || !item.visual) {
+      if (!window.FootyRevealedEvents.some(event => event.sequence === item.sequence)) window.FootyRevealedEvents.push(item);
+      if (instant || !item.visual || paused || alreadyCompleted) {
+        window.FootyMatchVisuals?.applyInstantEvent(item);
         addEventImmediate(item, instant);
         return;
       }
@@ -701,14 +712,18 @@ if (timeline.querySelector(`[data-sequence="${item.sequence}"]`)) return;
 
       const VISUAL_TIMEOUT_MS = 1600;
       let timeoutId = null;
+      let visualSettled = false;
 
       try {
-        const timeout = new Promise((resolve) => {
-          timeoutId = window.setTimeout(
-            resolve,
-            VISUAL_TIMEOUT_MS,
-          );
-        });
+        const cancelExpired = () => {
+          if (!visualSettled) window.FootyMatchVisuals?.cancelEvent();
+        };
+        // Match time stops while paused/hidden; its watchdog must stop too.
+        const timeout = window.FootyMatchVisuals?.waitForSimulation
+          ? window.FootyMatchVisuals.waitForSimulation(VISUAL_TIMEOUT_MS / 1000).then(cancelExpired)
+          : new Promise(resolve => {
+              timeoutId = window.setTimeout(() => { cancelExpired(); resolve(); }, VISUAL_TIMEOUT_MS);
+            });
 
         await Promise.race([
           Promise.resolve(visualPlayer(item)),
@@ -720,12 +735,13 @@ if (timeline.querySelector(`[data-sequence="${item.sequence}"]`)) return;
           error,
         );
       } finally {
+        visualSettled = true;
         if (timeoutId !== null) {
           window.clearTimeout(timeoutId);
         }
       }
 
-      addEventImmediate(item, false);
+      if (!reportShown && !finalising) addEventImmediate(item, false);
     }
 
     async function postJson(endpoint, payload) {
@@ -969,6 +985,8 @@ if (timeline.querySelector(`[data-sequence="${item.sequence}"]`)) return;
     function renderReport(payload) {
       if (reportShown) return;
       reportShown = true;
+      stage.dataset.replayFinished = "true";
+      window.FootyMatchVisuals?.finish();
       const finalScore = payload.final_score;
       homeScore.textContent = finalScore.home;
       awayScore.textContent = finalScore.away;
@@ -989,6 +1007,8 @@ if (timeline.querySelector(`[data-sequence="${item.sequence}"]`)) return;
     async function finalise(skip = false) {
       if (finalising || reportShown) return;
       finalising = true;
+      window.FootyMatchVisuals?.cancelEvent();
+      if (skip) { paused = true; syncVisualControls(); }
       window.clearTimeout(timer);
       status.textContent = skip ? "Skipping to full time" : "Finalising";
       pauseButton.disabled = true;
@@ -997,13 +1017,14 @@ if (timeline.querySelector(`[data-sequence="${item.sequence}"]`)) return;
         const payload = await postJson(completeEndpoint, {skip});
         const events = payload.remaining_events || [];
         for (let index = cursor; index < events.length; index += 1) {
-          await addEvent(events[index], skip);
+          await addEvent(events[index], skip || alreadyCompleted);
           cursor = index + 1;
         }
         renderReport(payload);
       } catch (error) {
         finalising = false;
         paused = true;
+        syncVisualControls();
         status.textContent = "Completion failed";
         pauseButton.disabled = false;
         finishButton.disabled = false;
@@ -1012,26 +1033,29 @@ if (timeline.querySelector(`[data-sequence="${item.sequence}"]`)) return;
     }
 
     async function tick() {
-      if (paused || finalising || reportShown) return;
+      if (paused || finalising || reportShown || advancing || skipInProgress) return;
+      advancing = true;
       try {
         const payload = await postJson(advanceEndpoint, {cursor});
         if (payload.completed) {
           await finalise(false);
           return;
         }
+        if (finalising || reportShown) return;
         await addEvent(payload.event);
         cursor = payload.cursor;
         if (payload.event?.kind === "full_time" || !payload.has_more) {
           await finalise(false);
           return;
         }
-        timer = window.setTimeout(tick, interval());
+        if (!paused && !finalising && !reportShown) timer = window.setTimeout(tick, interval());
       } catch (error) {
         paused = true;
+        syncVisualControls();
         status.textContent = "Replay paused · connection error";
         pauseButton.innerHTML = "Retry <kbd>Space</kbd>";
         showToast(error.message || "Replay request failed.", true);
-      }
+      } finally { advancing = false; }
     }
 
     const MAJOR_EVENT_KINDS = new Set([
@@ -1067,7 +1091,7 @@ if (timeline.querySelector(`[data-sequence="${item.sequence}"]`)) return;
     }
 
     async function skipToNextMajorEvent() {
-      if (finalising || reportShown || skipInProgress) return;
+      if (finalising || reportShown || skipInProgress || advancing) return;
 
       skipInProgress = true;
       window.clearTimeout(timer);
@@ -1106,6 +1130,7 @@ if (timeline.querySelector(`[data-sequence="${item.sequence}"]`)) return;
         }
       } catch (error) {
         paused = true;
+        syncVisualControls();
         status.textContent = "Replay paused · connection error";
         showToast(
           error.message || "Could not skip to next event.",
@@ -1158,6 +1183,7 @@ if (timeline.querySelector(`[data-sequence="${item.sequence}"]`)) return;
     function togglePause() {
       if (finalising || reportShown) return;
       paused = !paused;
+      syncVisualControls();
       status.textContent = paused ? "Paused" : "Playing";
       pauseButton.innerHTML = paused ? "Resume <kbd>Space</kbd>" : "Pause <kbd>Space</kbd>";
       window.clearTimeout(timer);
@@ -1165,9 +1191,11 @@ if (timeline.querySelector(`[data-sequence="${item.sequence}"]`)) return;
     }
 
     function setSpeed(nextSpeed) {
+      if (reportShown || finalising) return;
       const next = Number(nextSpeed);
       speed = [1, 2, 4].includes(next) ? next : 1;
       updateSpeedButtons();
+      syncVisualControls();
       if (!paused && !finalising && !reportShown) {
         window.clearTimeout(timer);
         timer = window.setTimeout(tick, 60);

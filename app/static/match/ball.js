@@ -113,16 +113,10 @@ export function createBallController(initialBall = {}) {
     }
 
     const speed = Math.hypot(owner.vx || 0, owner.vy || 0);
-    const directionX = Math.abs(owner.vx || 0) > .1
-      ? Math.sign(owner.vx)
-      : owner.team === "home" ? 1 : -1;
-
-    const touchLength = owner.role === "GK"
-      ? .15
-      : clamp(.72 + speed * .035, .72, 1.25);
-
-    const targetX = owner.x + directionX * touchLength;
-    const targetY = owner.y + Math.sin((owner.x + owner.y) * .08) * .16;
+    const heading = Number(owner.heading || 0);
+    const touchLength = owner.role === "GK" ? .22 : clamp(.55 + speed * .025, .55, .82);
+    const targetX = owner.x + Math.cos(heading) * touchLength / 1.05;
+    const targetY = owner.y + Math.sin(heading) * touchLength / .68;
     const response = clamp(dtSeconds * 12, 0, 1);
 
     state.x = lerp(state.x, targetX, response);

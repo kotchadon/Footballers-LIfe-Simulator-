@@ -1,0 +1,499 @@
+{
+  "schema_version": 1,
+  "seed": 918273,
+  "home": {
+    "name": "Home FC",
+    "club_id": 10,
+    "strength": 72,
+    "formation": "4-2-3-1",
+    "attacking_direction": 1
+  },
+  "away": {
+    "name": "Away FC",
+    "club_id": 11,
+    "strength": 69,
+    "formation": "3-5-2",
+    "attacking_direction": -1
+  },
+  "actors": [
+    {
+      "actor_id": "home_gk",
+      "persistent_player_id": null,
+      "display_name": "N. Meyer",
+      "shirt_number": 1,
+      "role": "GK",
+      "team": "home",
+      "attributes": {
+        "pace": 67,
+        "acceleration": 63,
+        "stamina": 72,
+        "dribbling": 65,
+        "positioning": 80
+      },
+      "visual_profile": {
+        "is_user": false,
+        "kit_slot": "home"
+      }
+    },
+    {
+      "actor_id": "home_lb",
+      "persistent_player_id": null,
+      "display_name": "L. Kim",
+      "shirt_number": 2,
+      "role": "LB",
+      "team": "home",
+      "attributes": {
+        "pace": 70,
+        "acceleration": 66,
+        "stamina": 77,
+        "dribbling": 63,
+        "positioning": 65
+      },
+      "visual_profile": {
+        "is_user": false,
+        "kit_slot": "home"
+      }
+    },
+    {
+      "actor_id": "home_lcb",
+      "persistent_player_id": null,
+      "display_name": "L. Martin",
+      "shirt_number": 3,
+      "role": "LCB",
+      "team": "home",
+      "attributes": {
+        "pace": 67,
+        "acceleration": 75,
+        "stamina": 78,
+        "dribbling": 64,
+        "positioning": 71
+      },
+      "visual_profile": {
+        "is_user": false,
+        "kit_slot": "home"
+      }
+    },
+    {
+      "actor_id": "home_rcb",
+      "persistent_player_id": null,
+      "display_name": "K. Malik",
+      "shirt_number": 4,
+      "role": "RCB",
+      "team": "home",
+      "attributes": {
+        "pace": 81,
+        "acceleration": 75,
+        "stamina": 77,
+        "dribbling": 74,
+        "positioning": 67
+      },
+      "visual_profile": {
+        "is_user": false,
+        "kit_slot": "home"
+      }
+    },
+    {
+      "actor_id": "home_rb",
+      "persistent_player_id": null,
+      "display_name": "D. Nakamura",
+      "shirt_number": 5,
+      "role": "RB",
+      "team": "home",
+      "attributes": {
+        "pace": 67,
+        "acceleration": 78,
+        "stamina": 71,
+        "dribbling": 61,
+        "positioning": 79
+      },
+      "visual_profile": {
+        "is_user": false,
+        "kit_slot": "home"
+      }
+    },
+    {
+      "actor_id": "home_ldm",
+      "persistent_player_id": null,
+      "display_name": "O. Khan",
+      "shirt_number": 6,
+      "role": "LDM",
+      "team": "home",
+      "attributes": {
+        "pace": 67,
+        "acceleration": 79,
+        "stamina": 76,
+        "dribbling": 73,
+        "positioning": 68
+      },
+      "visual_profile": {
+        "is_user": false,
+        "kit_slot": "home"
+      }
+    },
+    {
+      "actor_id": "home_rdm",
+      "persistent_player_id": null,
+      "display_name": "R. Meyer",
+      "shirt_number": 7,
+      "role": "RDM",
+      "team": "home",
+      "attributes": {
+        "pace": 80,
+        "acceleration": 74,
+        "stamina": 82,
+        "dribbling": 60,
+        "positioning": 67
+      },
+      "visual_profile": {
+        "is_user": false,
+        "kit_slot": "home"
+      }
+    },
+    {
+      "actor_id": "home_cam",
+      "persistent_player_id": null,
+      "display_name": "E. Ali",
+      "shirt_number": 8,
+      "role": "CAM",
+      "team": "home",
+      "attributes": {
+        "pace": 77,
+        "acceleration": 66,
+        "stamina": 82,
+        "dribbling": 71,
+        "positioning": 71
+      },
+      "visual_profile": {
+        "is_user": false,
+        "kit_slot": "home"
+      }
+    },
+    {
+      "actor_id": "career_player",
+      "persistent_player_id": 1,
+      "display_name": "Advay Katoch",
+      "shirt_number": 17,
+      "role": "LW",
+      "team": "home",
+      "attributes": {
+        "pace": 74,
+        "acceleration": 74,
+        "stamina": 82,
+        "dribbling": 71,
+        "positioning": 68,
+        "shooting": 64,
+        "passing": 68,
+        "defending": 41,
+        "physical": 62
+      },
+      "visual_profile": {
+        "is_user": true,
+        "kit_slot": "home"
+      }
+    },
+    {
+      "actor_id": "home_st",
+      "persistent_player_id": null,
+      "display_name": "T. Brown",
+      "shirt_number": 10,
+      "role": "ST",
+      "team": "home",
+      "attributes": {
+        "pace": 78,
+        "acceleration": 67,
+        "stamina": 64,
+        "dribbling": 78,
+        "positioning": 83
+      },
+      "visual_profile": {
+        "is_user": false,
+        "kit_slot": "home"
+      }
+    },
+    {
+      "actor_id": "home_rw",
+      "persistent_player_id": null,
+      "display_name": "N. Brown",
+      "shirt_number": 11,
+      "role": "RW",
+      "team": "home",
+      "attributes": {
+        "pace": 69,
+        "acceleration": 77,
+        "stamina": 68,
+        "dribbling": 60,
+        "positioning": 68
+      },
+      "visual_profile": {
+        "is_user": false,
+        "kit_slot": "home"
+      }
+    },
+    {
+      "actor_id": "away_gk",
+      "persistent_player_id": null,
+      "display_name": "M. Diallo",
+      "shirt_number": 1,
+      "role": "GK",
+      "team": "away",
+      "attributes": {
+        "pace": 66,
+        "acceleration": 71,
+        "stamina": 64,
+        "dribbling": 63,
+        "positioning": 66
+      },
+      "visual_profile": {
+        "is_user": false,
+        "kit_slot": "away"
+      }
+    },
+    {
+      "actor_id": "away_lcb",
+      "persistent_player_id": null,
+      "display_name": "N. Kim",
+      "shirt_number": 2,
+      "role": "LCB",
+      "team": "away",
+      "attributes": {
+        "pace": 79,
+        "acceleration": 60,
+        "stamina": 72,
+        "dribbling": 79,
+        "positioning": 79
+      },
+      "visual_profile": {
+        "is_user": false,
+        "kit_slot": "away"
+      }
+    },
+    {
+      "actor_id": "away_cb",
+      "persistent_player_id": null,
+      "display_name": "R. Davis",
+      "shirt_number": 3,
+      "role": "CB",
+      "team": "away",
+      "attributes": {
+        "pace": 75,
+        "acceleration": 73,
+        "stamina": 62,
+        "dribbling": 71,
+        "positioning": 61
+      },
+      "visual_profile": {
+        "is_user": false,
+        "kit_slot": "away"
+      }
+    },
+    {
+      "actor_id": "away_rcb",
+      "persistent_player_id": null,
+      "display_name": "L. Meyer",
+      "shirt_number": 4,
+      "role": "RCB",
+      "team": "away",
+      "attributes": {
+        "pace": 74,
+        "acceleration": 73,
+        "stamina": 74,
+        "dribbling": 68,
+        "positioning": 77
+      },
+      "visual_profile": {
+        "is_user": false,
+        "kit_slot": "away"
+      }
+    },
+    {
+      "actor_id": "away_lwb",
+      "persistent_player_id": null,
+      "display_name": "J. Ali",
+      "shirt_number": 5,
+      "role": "LWB",
+      "team": "away",
+      "attributes": {
+        "pace": 62,
+        "acceleration": 69,
+        "stamina": 72,
+        "dribbling": 57,
+        "positioning": 80
+      },
+      "visual_profile": {
+        "is_user": false,
+        "kit_slot": "away"
+      }
+    },
+    {
+      "actor_id": "away_lcm",
+      "persistent_player_id": null,
+      "display_name": "O. Malik",
+      "shirt_number": 6,
+      "role": "LCM",
+      "team": "away",
+      "attributes": {
+        "pace": 72,
+        "acceleration": 72,
+        "stamina": 64,
+        "dribbling": 65,
+        "positioning": 81
+      },
+      "visual_profile": {
+        "is_user": false,
+        "kit_slot": "away"
+      }
+    },
+    {
+      "actor_id": "away_cm",
+      "persistent_player_id": null,
+      "display_name": "T. Ali",
+      "shirt_number": 7,
+      "role": "CM",
+      "team": "away",
+      "attributes": {
+        "pace": 78,
+        "acceleration": 71,
+        "stamina": 62,
+        "dribbling": 61,
+        "positioning": 70
+      },
+      "visual_profile": {
+        "is_user": false,
+        "kit_slot": "away"
+      }
+    },
+    {
+      "actor_id": "away_rcm",
+      "persistent_player_id": null,
+      "display_name": "L. Malik",
+      "shirt_number": 8,
+      "role": "RCM",
+      "team": "away",
+      "attributes": {
+        "pace": 72,
+        "acceleration": 63,
+        "stamina": 66,
+        "dribbling": 69,
+        "positioning": 68
+      },
+      "visual_profile": {
+        "is_user": false,
+        "kit_slot": "away"
+      }
+    },
+    {
+      "actor_id": "away_rwb",
+      "persistent_player_id": null,
+      "display_name": "J. Rossi",
+      "shirt_number": 9,
+      "role": "RWB",
+      "team": "away",
+      "attributes": {
+        "pace": 63,
+        "acceleration": 79,
+        "stamina": 64,
+        "dribbling": 77,
+        "positioning": 68
+      },
+      "visual_profile": {
+        "is_user": false,
+        "kit_slot": "away"
+      }
+    },
+    {
+      "actor_id": "away_lst",
+      "persistent_player_id": null,
+      "display_name": "N. Silva",
+      "shirt_number": 10,
+      "role": "LST",
+      "team": "away",
+      "attributes": {
+        "pace": 68,
+        "acceleration": 76,
+        "stamina": 67,
+        "dribbling": 69,
+        "positioning": 67
+      },
+      "visual_profile": {
+        "is_user": false,
+        "kit_slot": "away"
+      }
+    },
+    {
+      "actor_id": "away_rst",
+      "persistent_player_id": null,
+      "display_name": "R. Silva",
+      "shirt_number": 11,
+      "role": "RST",
+      "team": "away",
+      "attributes": {
+        "pace": 72,
+        "acceleration": 60,
+        "stamina": 79,
+        "dribbling": 76,
+        "positioning": 81
+      },
+      "visual_profile": {
+        "is_user": false,
+        "kit_slot": "away"
+      }
+    }
+  ],
+  "user_actor_id": "career_player",
+  "career_player": {
+    "actor_id": "career_player",
+    "selection_status": "starter",
+    "state": "starting",
+    "active_from_minute": 0,
+    "active_until_minute": null,
+    "team": "home",
+    "display_name": "Advay Katoch",
+    "role": "LW",
+    "attributes": {
+      "pace": 74,
+      "acceleration": 74,
+      "stamina": 82,
+      "dribbling": 71,
+      "positioning": 68,
+      "shooting": 64,
+      "passing": 68,
+      "defending": 41,
+      "physical": 62
+    },
+    "actor": {
+      "actor_id": "career_player",
+      "persistent_player_id": 1,
+      "display_name": "Advay Katoch",
+      "shirt_number": 17,
+      "role": "LW",
+      "team": "home",
+      "attributes": {
+        "pace": 74,
+        "acceleration": 74,
+        "stamina": 82,
+        "dribbling": 71,
+        "positioning": 68,
+        "shooting": 64,
+        "passing": 68,
+        "defending": 41,
+        "physical": 62
+      },
+      "visual_profile": {
+        "is_user": true,
+        "kit_slot": "home"
+      }
+    }
+  },
+  "initial_ball": {
+    "x": 50.0,
+    "y": 50.0,
+    "height": 0.0,
+    "owner_actor_id": null,
+    "state": "LOOSE"
+  },
+  "camera": {
+    "mode": "broadcast_side",
+    "keep_full_pitch_visible": true,
+    "perspective": 0.18
+  }
+}

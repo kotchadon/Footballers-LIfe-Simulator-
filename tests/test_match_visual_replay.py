@@ -134,7 +134,7 @@ def test_throw_in_and_free_kick_are_restarts_not_shots():
 
 def test_halftime_waits_until_first_revealed_event_after_45():
     text = Path("app/static/match/event-choreography.js").read_text()
-    assert "minute <= 45" in text
+    assert "Number(item.minute) > 45" in text
     assert "minute < 45" not in text
 
 
@@ -156,8 +156,8 @@ def test_match_engine_transition_handlers_exist():
 def test_choreography_routes_revealed_transitions():
     text = Path("app/static/match/event-choreography.js").read_text()
     for marker in (
-        'kind === "SUBSTITUTION_ON"', 'kind === "SUBSTITUTION_OFF"',
-        'kind === "RED_CARD"', '"SET_PIECE"',
+        "kind.startsWith('SUBSTITUTION_')",
+        "kind === 'RED_CARD'", "'SET_PIECE'",
         "handleHalftime", "handleSubstitution", "handleCard",
     ):
         assert marker in text
@@ -259,7 +259,7 @@ def test_skip_to_next_major_event_reveals_sequentially_through_existing_endpoint
 def test_full_time_completion_path_remains_existing_authoritative_path():
     text = Path("app/static/app.js").read_text()
     assert "postJson(completeEndpoint, {skip})" in text
-    assert "await addEvent(events[index], skip);" in text
+    assert "await addEvent(events[index], skip || alreadyCompleted);" in text
 
 
 def test_hidden_tab_pause_and_resume_still_prevent_delta_spike():
