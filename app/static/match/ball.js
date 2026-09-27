@@ -1,6 +1,10 @@
 export const BALL_STATES = Object.freeze({
   CONTROLLED: "CONTROLLED",
   PASS: "PASS",
+  GROUND_PASS: "GROUND_PASS",
+  DRIVEN_PASS: "DRIVEN_PASS",
+  LOFTED_PASS: "LOFTED_PASS",
+  LONG_SWITCH: "LONG_SWITCH",
   LONG_BALL: "LONG_BALL",
   CROSS: "CROSS",
   SHOT: "SHOT",
@@ -45,7 +49,7 @@ export function createBallController(initialBall = {}) {
     state.height = Number(from.height || 0);
     state.action = {
       kind,
-      from: {x: Number(from.x), y: Number(from.y)},
+      from: {x: Number(from.x), y: Number(from.y), height: Number(from.height || 0)},
       to: {x: Number(to.x), y: Number(to.y)},
       elapsed: 0,
       duration: Math.max(.18, Number(options.duration || .7)),
@@ -62,6 +66,11 @@ export function createBallController(initialBall = {}) {
       maxHeight: options.maxHeight || .22,
     });
   }
+
+  function groundPass(from,to,options={}) { launch(BALL_STATES.GROUND_PASS,from,to,{duration:.55,maxHeight:.06,...options}); }
+  function drivenPass(from,to,options={}) { launch(BALL_STATES.DRIVEN_PASS,from,to,{duration:.55,maxHeight:.28,...options}); }
+  function loftedPass(from,to,options={}) { launch(BALL_STATES.LOFTED_PASS,from,to,{duration:.95,maxHeight:1.9,...options}); }
+  function longSwitch(from,to,options={}) { launch(BALL_STATES.LONG_SWITCH,from,to,{duration:1.3,maxHeight:3.4,...options}); }
 
   function longBall(from, to, options = {}) {
     launch(BALL_STATES.LONG_BALL, from, to, {
@@ -136,16 +145,18 @@ export function createBallController(initialBall = {}) {
       ? actorMap.get(action.targetActorId)
       : null;
 
-    const targetX = liveTarget?.x ?? action.to.x;
-    const targetY = liveTarget?.y ?? action.to.y;
+    // Fly to the committed destination; do not magnetically chase a moving actor.
+    const targetX = action.to.x;
+    const targetY = action.to.y;
 
     state.x = lerp(action.from.x, targetX, eased);
     state.y = lerp(action.from.y, targetY, eased);
-    state.height = 4 * action.maxHeight * progress * (1 - progress);
+    state.height = action.from.height * (1-progress) + 4 * action.maxHeight * progress * (1 - progress);
 
     if (progress >= 1) {
       const targetActorId = action.targetActorId;
-      const settle = action.settleToOwner && targetActorId;
+      const settle = action.settleToOwner && liveTarget
+        && Math.hypot((liveTarget.x-state.x)*1.05,(liveTarget.y-state.y)*.68)<1.5;
       state.action = null;
 
       if (settle) {
@@ -180,6 +191,10 @@ export function createBallController(initialBall = {}) {
     state,
     control,
     pass,
+    groundPass,
+    drivenPass,
+    loftedPass,
+    longSwitch,
     longBall,
     cross,
     shoot,

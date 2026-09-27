@@ -711,6 +711,8 @@ if (timeline.querySelector(`[data-sequence="${item.sequence}"]`)) return;
       }
 
       const VISUAL_TIMEOUT_MS = 1600;
+      const visualBudget = Math.min(7, Math.max(VISUAL_TIMEOUT_MS / 1000,
+        Number(window.FootyMatchVisuals?.eventBudget?.(item)) || 0));
       let timeoutId = null;
       let visualSettled = false;
 
@@ -720,7 +722,7 @@ if (timeline.querySelector(`[data-sequence="${item.sequence}"]`)) return;
         };
         // Match time stops while paused/hidden; its watchdog must stop too.
         const timeout = window.FootyMatchVisuals?.waitForSimulation
-          ? window.FootyMatchVisuals.waitForSimulation(VISUAL_TIMEOUT_MS / 1000).then(cancelExpired)
+          ? window.FootyMatchVisuals.waitForSimulation(visualBudget).then(cancelExpired)
           : new Promise(resolve => {
               timeoutId = window.setTimeout(() => { cancelExpired(); resolve(); }, VISUAL_TIMEOUT_MS);
             });
@@ -1035,6 +1037,7 @@ if (timeline.querySelector(`[data-sequence="${item.sequence}"]`)) return;
     async function tick() {
       if (paused || finalising || reportShown || advancing || skipInProgress) return;
       advancing = true;
+      const presentationStartedAt = Date.now();
       try {
         const payload = await postJson(advanceEndpoint, {cursor});
         if (payload.completed) {
@@ -1048,7 +1051,11 @@ if (timeline.querySelector(`[data-sequence="${item.sequence}"]`)) return;
           await finalise(false);
           return;
         }
-        if (!paused && !finalising && !reportShown) timer = window.setTimeout(tick, interval());
+        // Connected attacks borrow from this event's existing replay interval.
+        // Keep the old 1.6-second presentation allowance; do not append an entire
+        // second delay after a longer buildup. Official minutes stay server-owned.
+        const extraPresentationMs = Math.max(0, Date.now()-presentationStartedAt-1600/speed);
+        if (!paused && !finalising && !reportShown) timer = window.setTimeout(tick, Math.max(0,interval()-extraPresentationMs));
       } catch (error) {
         paused = true;
         syncVisualControls();

@@ -2,7 +2,7 @@ import * as THREE from "../vendor/three/three.module.js";
 import {createPlayerFactory} from "./player-model.js";
 
 export const GRASS_Y = .04;
-export const BALL_RADIUS = .11;
+export const BALL_RADIUS = .135;
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,Number(v)||0));
 export function pitchToWorld(x,y,height=0) {
   return new THREE.Vector3((Number(x)-50)*1.05,GRASS_Y+Number(height),-(Number(y)-50)*.68);
@@ -76,8 +76,10 @@ export function createMatchScene(asset,plan,{reducedMotion=false}={}) {
   const pos=ball.geometry.getAttribute('position'),colors=[];
   for(let i=0;i<pos.count;i++) {const face=Math.floor(i/3);const dark=((face*17+Math.floor(face/9))%13)<3;colors.push(...(dark?[.028,.035,.047]:[.96,.97,.95]));}
   ball.geometry.setAttribute('color',new THREE.Float32BufferAttribute(colors,3));
-  ball.material=new THREE.MeshStandardMaterial({vertexColors:true,roughness:.64});ball.scale.setScalar(1);ball.castShadow=true;
-  const ballShadow=contactShadow(.17,.32);ballShadow.name='BallShadow';scene.add(ballShadow);
+  ball.material=new THREE.MeshStandardMaterial({vertexColors:true,roughness:.5,emissive:0xffffff,emissiveIntensity:.08});ball.scale.setScalar(1);ball.castShadow=true;
+  const ballShadow=contactShadow(.23,.48);ballShadow.name='BallShadow';scene.add(ballShadow);
+  const airborneCue=new THREE.Mesh(new THREE.RingGeometry(.22,.29,24),new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:.2,depthWrite:false,side:THREE.DoubleSide}));
+  airborneCue.name='AirborneBallCue';airborneCue.rotation.x=-Math.PI/2;airborneCue.visible=false;scene.add(airborneCue);
   const userRing=new THREE.Mesh(new THREE.RingGeometry(.49,.62,40),new THREE.MeshBasicMaterial({color:0xffd24a,side:THREE.DoubleSide,depthWrite:false}));
   userRing.name='CareerPlayerMarker';userRing.rotation.x=-Math.PI/2;userRing.visible=false;scene.add(userRing);
   const pointer=new THREE.Mesh(new THREE.ConeGeometry(.12,.22,3),new THREE.MeshBasicMaterial({color:0xffd24a}));pointer.rotation.z=Math.PI;pointer.visible=false;scene.add(pointer);
@@ -107,9 +109,12 @@ export function createMatchScene(asset,plan,{reducedMotion=false}={}) {
       if(Math.hypot(dx,dz)<8){ball.rotateZ(-dx/BALL_RADIUS);ball.rotateX(dz/BALL_RADIUS);}
     }
     ball.position.copy(world);previousBall=world.clone();
-    ballShadow.position.set(world.x,GRASS_Y+.009,world.z);ballShadow.material.opacity=.32/(1+(Number(bs.height)||0)*.35);
+    ballShadow.position.set(world.x,GRASS_Y+.009,world.z);ballShadow.material.opacity=.48/(1+(Number(bs.height)||0)*.28);
+    airborneCue.position.set(world.x,GRASS_Y+.012,world.z);airborneCue.visible=Number(bs.height)>.65;
     camera.aspect=Math.max(.35,aspect);camera.fov=cameraMode==='wide'?46:43;camera.updateProjectionMatrix();
-    const wanted=new THREE.Vector3(cameraMode==='wide'?0:clamp(world.x*.72,-35,35),0,cameraMode==='wide'?0:clamp(world.z*.18,-5,5));
+    const focus=state.presentationFocus||bs;
+    const focusWorld=pitchToWorld(clamp(focus.x,bs.x-7,bs.x+7),clamp(focus.y,bs.y-10,bs.y+10));
+    const wanted=new THREE.Vector3(cameraMode==='wide'?0:clamp(focusWorld.x*.72,-35,35),0,cameraMode==='wide'?0:clamp(focusWorld.z*.18,-5,5));
     if(cameraReset||previousTime===null){target.copy(wanted);cameraReset=false;}else if(dt>0)target.lerp(wanted,1-Math.exp(-dt*2.4));
     const narrow=Math.max(1,Math.min(1.65,1.4/camera.aspect));
     camera.position.set(target.x+(cameraMode==='wide'?0:9),(cameraMode==='wide'?76:43)*narrow,(cameraMode==='wide'?79:57)*narrow+target.z);

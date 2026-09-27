@@ -43,6 +43,7 @@ export function createMatchEngine({
   function capture(state, cameraState) {
     lastFrame = structuredClone({
       actors: state.actors, ball: state.ball, camera: cameraState,
+      presentationFocus: state.presentationFocus,
       animationPhase: (animationElapsed * .72) % 1,
       elapsed: animationElapsed, visualMinute,
     });

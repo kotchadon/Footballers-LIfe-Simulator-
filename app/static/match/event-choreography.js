@@ -2,7 +2,7 @@ function kindOf(item) { return String(item?.visual?.kind || item?.kind || 'momen
 export function createEventChoreography({tactical, matchEngine, onOverlay = () => {}}) {
   let generation = 0, halftimeShown = false;
   const seen = new Set();
-  function cancel() { generation++; }
+  function cancel() { generation++; tactical.cancelAuthoritativeBuildup?.(); }
   function applyInstantEvent(item) {
     if (!item?.visual || matchEngine.isFinished()) return;
     const key = item.sequence ?? item;
@@ -28,6 +28,15 @@ export function createEventChoreography({tactical, matchEngine, onOverlay = () =
     if (kind.startsWith('SUBSTITUTION_')) { onOverlay(kind.endsWith('_ON') ? 'SUBSTITUTION · ON' : 'SUBSTITUTION · OFF'); return; }
     if (kind.endsWith('_CARD')) { onOverlay(kind === 'RED_CARD' ? 'RED CARD' : 'YELLOW CARD'); return; }
     if (['GOAL', 'SAVE', 'MISS'].includes(kind)) {
+      onOverlay('BUILDUP');
+      const buildupDuration=tactical.beginAuthoritativeBuildup({side:visual.side,actorId:visual.actor_id});
+      // This is the existing fixed-step presentation clock, never a wall timer.
+      let elapsed=0;
+      while(!tactical.isAuthoritativeBuildupReady() && elapsed<buildupDuration+.5) {
+        if(!(await wait(.05)))return;
+        elapsed+=.05;
+      }
+      if(!tactical.isAuthoritativeBuildupReady()){tactical.cancelAuthoritativeBuildup();return;}
       onOverlay('SHOT');
       const duration = tactical.beginAuthoritativeEvent({kind:'SHOT',outcome:kind,side:visual.side,actorId:visual.actor_id,ballStart:visual.ball_start,ballTarget:visual.ball_target});
       if (!(await wait(duration))) return;
@@ -35,7 +44,7 @@ export function createEventChoreography({tactical, matchEngine, onOverlay = () =
       if (kind === 'SAVE') { tactical.playKeeperAction('GK_CATCH',visual.side); onOverlay('SAVE'); }
       if (kind === 'MISS') onOverlay('OFF TARGET');
       await wait(.35);
-      return;
+      return alive()?kind:null;
     }
     if (['SET_PIECE','CORNER','PENALTY','THROW_IN','FREE_KICK'].includes(kind)) {
       const type = String(visual.set_piece_type || kind).toLowerCase();

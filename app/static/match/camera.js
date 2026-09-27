@@ -35,7 +35,7 @@ export function createCameraController({reducedMotion = false} = {}) {
         ? payload.ballTarget
         : null;
 
-    if (target) state.eventFocusX = clamp(target[0], 0, 100);
+    // Emphasis affects zoom, never the location of an unreached event target.
     state.emphasis = eventKind || null;
 
     if (eventKind === "GOAL") {
@@ -58,7 +58,7 @@ export function createCameraController({reducedMotion = false} = {}) {
     emphasisTime = Math.max(0, emphasisTime - dt);
 
     const ballX = clamp(tacticalState?.ball?.x ?? 50, 0, 100);
-    const liveFocusX = emphasisTime > 0 ? state.eventFocusX : ballX;
+    const liveFocusX = clamp(tacticalState.presentationFocus?.x ?? ballX,ballX-7,ballX+7);
     const normalized = (liveFocusX - 50) / 50;
     const targetPanX = clamp(
       normalized * MAX_PAN_PERCENT,

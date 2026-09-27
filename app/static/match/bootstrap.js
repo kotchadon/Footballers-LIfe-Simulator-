@@ -208,6 +208,9 @@ async function boot() {
     finish() { choreography.cancel(); engine.finish(); },
     cancelEvent: () => choreography.cancel(),
     waitForSimulation: seconds => engine.waitForSimulation(seconds),
+    // A ceiling, not a delay: most sequences finish in 1–3 seconds. Normal events
+    // retain their original watchdog; connected attacks may finish a live pass.
+    eventBudget: item => ['GOAL','SAVE','MISS'].includes(String(item?.visual?.kind||item?.kind).toUpperCase()) ? 7 : 1.6,
     applyInstantEvent: item => choreography.applyInstantEvent(item),
     async playEvent(item) {
       if (!item?.visual || engine.isFinished()) return;
@@ -218,10 +221,7 @@ async function boot() {
         || "",
       ).toLowerCase();
 
-      if (kind === "goal") {
-        audio.play("goal");
-        audio.play("crowd");
-      } else if (
+      if (
         ["save", "miss", "corner", "penalty", "free_kick"].includes(kind)
       ) {
         audio.play("kick");
@@ -229,12 +229,11 @@ async function boot() {
         audio.play("whistle");
       }
 
-      engine.emphasizeEvent?.(
-        item.visual.kind || item.kind,
-        item.visual,
-      );
-
-      await choreography.playEvent(item);
+      const presented=await choreography.playEvent(item);
+      if(presented&&!engine.isFinished()) {
+        engine.emphasizeEvent?.(presented);
+        if(presented==='GOAL'){audio.play("goal");audio.play("crowd");}
+      }
     },
   };
 

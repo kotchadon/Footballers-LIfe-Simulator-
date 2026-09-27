@@ -12,12 +12,12 @@ async function fixture(){
 }
 test('paused shot choreography cannot announce a goal or run a late keeper catch',async()=>{
  const f=await fixture();const job=f.c.playEvent({sequence:1,minute:30,visual:{kind:'goal',side:'home',ball_start:[85,50],ball_target:[98,50]}});
- f.engine.pause();await f.step(90);assert.deepEqual(f.overlays,['SHOT']);
- f.engine.resume();await f.step(60);await job;assert.ok(f.overlays.includes('GOAL'));assert.ok(f.tactical.getState().ball.x>100);f.engine.destroy();
+ f.engine.pause();await f.step(90);assert.deepEqual(f.overlays,['BUILDUP']);
+ f.engine.resume();await f.step(360);await job;assert.deepEqual(f.overlays,['BUILDUP','SHOT','GOAL']);assert.ok(f.renders.some(frame=>frame.ball.x>100));f.engine.destroy();
 });
 test('cancelling a shot prevents late outcome overlays after finish',async()=>{
  const f=await fixture();const job=f.c.playEvent({sequence:2,minute:30,visual:{kind:'save',side:'home'}});
- f.c.cancel();f.engine.finish();await job;assert.deepEqual(f.overlays,['SHOT']);assert.notEqual(f.tactical.getState().ball.state,'KEEPER_HELD');f.engine.destroy();
+ f.c.cancel();f.engine.finish();await job;assert.deepEqual(f.overlays,['BUILDUP']);assert.notEqual(f.tactical.getState().ball.state,'KEEPER_HELD');f.engine.destroy();
 });
 test('45th minute does not switch ends; first later reveal switches once',async()=>{
  const f=await fixture();const direction=f.tactical.getState().teams.home.direction;
@@ -57,4 +57,11 @@ test('network failure pauses visuals together with replay controls',async()=>{
  const fn=source.slice(source.indexOf('    async function tick()'),source.indexOf('    const MAJOR_EVENT_KINDS'));
  let synced=0;const context={paused:false,finalising:false,reportShown:false,advancing:false,skipInProgress:false,cursor:0,advanceEndpoint:'/test',postJson:async()=>{throw new Error('test connection failure')},syncVisualControls:()=>synced++,status:{},pauseButton:{},showToast:()=>{}};
  vm.createContext(context);vm.runInContext(fn+'; this.runTick=tick;',context);await context.runTick();assert.equal(context.paused,true);assert.ok(synced>0);assert.equal(context.advancing,false);
+});
+test('long buildup consumes the existing replay gap instead of adding another full delay',async()=>{
+ const fs=require('node:fs'),vm=require('node:vm');const source=fs.readFileSync('app/static/app.js','utf8');
+ const fn=source.slice(source.indexOf('    async function tick()'),source.indexOf('    const MAJOR_EVENT_KINDS'));
+ const delays=[];let now=0;
+ const context={Date:{now:()=>now},paused:false,finalising:false,reportShown:false,advancing:false,skipInProgress:false,cursor:0,speed:1,timer:null,advanceEndpoint:'/test',postJson:async()=>({event:{kind:'goal'},cursor:1,has_more:true}),addEvent:async()=>{now+=2600;},interval:()=>3000,window:{setTimeout:(_fn,ms)=>delays.push(ms)},syncVisualControls:()=>{},status:{},pauseButton:{},showToast:()=>{}};
+ vm.createContext(context);vm.runInContext(fn+'; this.runTick=tick;',context);await context.runTick();assert.deepEqual(delays,[2000]);
 });

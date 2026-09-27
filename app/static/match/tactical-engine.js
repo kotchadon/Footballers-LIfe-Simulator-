@@ -3,6 +3,7 @@ import {integrateMovement} from "./movement.js";
 import {createPrng, sampleSeed} from "./prng.js";
 import {createBallController} from "./ball.js";
 import {createAnimationController} from "./animation-controller.js";
+import {nextFlowPhase, selectPassProfile, planAuthoritativeAttack, currentPresentationFocus} from "./football-flow.js";
 
 export const TACTICAL_PHASES = Object.freeze([
   "BUILDUP",
@@ -245,11 +246,7 @@ function selectCarrier(actors, team, phase, seed) {
 }
 
 function nextAttackingPhase(currentPhase, rng) {
-  if (currentPhase === "BUILDUP") return "PROGRESSION";
-  if (currentPhase === "PROGRESSION") return rng() < .68 ? "FINAL_THIRD" : "BUILDUP";
-  if (currentPhase === "FINAL_THIRD") return rng() < .34 ? "TRANSITION_DEFENCE" : "BUILDUP";
-  if (currentPhase === "TRANSITION_ATTACK") return rng() < .68 ? "PROGRESSION" : "FINAL_THIRD";
-  return "BUILDUP";
+  return nextFlowPhase(currentPhase);
 }
 
 const TEN_MAN_SHAPES = Object.freeze({
@@ -289,12 +286,16 @@ export function createTacticalEngine(plan) {
   });
   const animationController = createAnimationController();
   const ball = ballController.state;
+  // Initial kickoff placement happens before the first presented frame.
+  if (carrier) { ball.x=carrier.x; ball.y=carrier.y; }
   ballController.control(carrier?.actorId || null);
 
   let passClock = 0;
   let nextPassAt = 1.15 + rng() * .75;
   let eventOverrideUntil = 0;
   let eventClock = 0;
+  let buildup = null;
+  let pendingRestart = null;
 
   function resetPhase() {
     phaseIndex += 1;
@@ -307,24 +308,21 @@ export function createTacticalEngine(plan) {
           ? .74
           : .16;
 
-    if (rng() < turnoverChance) {
-      possessionTeam = possessionTeam === "home" ? "away" : "home";
+    const opponent = possessionTeam === "home" ? "away" : "home";
+    const challenger = nearestOutfieldActors(actors, opponent, ball, 1)[0];
+    if (rng() < turnoverChance && challenger && distance(challenger,ball)<4) {
+      // A visible nearby challenge, not a random remote ownership reassignment.
+      animationController.play(ball.ownerActorId,"PASS",{duration:.25,priority:3});
+      ballController.deflect({...ball},challenger,{targetActorId:challenger.actorId,duration:.3,maxHeight:.12,settleToOwner:true});
       attackingPhase = "TRANSITION_ATTACK";
     } else {
-      attackingPhase = nextAttackingPhase(attackingPhase, rng);
+      const progress=teams[possessionTeam].direction>0?ball.x:100-ball.x;
+      if (attackingPhase === "FINAL_THIRD") attackingPhase=progress<55?"PROGRESSION":"FINAL_THIRD";
+      else if (attackingPhase !== "PROGRESSION" || progress>=64) attackingPhase = nextAttackingPhase(attackingPhase, rng);
     }
 
     phaseDuration = 3.4 + rng() * 3.1;
-    carrier = selectCarrier(
-      actors,
-      possessionTeam,
-      attackingPhase,
-      sampleSeed(plan.seed, "carrier", phaseIndex, possessionTeam, attackingPhase),
-    );
-    if (!ball.action && carrier && ball.ownerActorId !== carrier.actorId) {
-      const distance = Math.hypot((ball.x-carrier.x)*1.05,(ball.y-carrier.y)*.68);
-      ballController.pass({...ball}, carrier, {targetActorId:carrier.actorId, duration:Math.max(.45,distance/18),maxHeight:.3});
-    }
+    carrier = actors.find(a=>a.actorId===ball.ownerActorId) || carrier;
     passClock = 0;
     nextPassAt = .85 + rng() * .95;
   }
@@ -335,7 +333,7 @@ export function createTacticalEngine(plan) {
     const direction = teams[currentCarrier.team].direction;
     const forwardDelta = (actor.x - currentCarrier.x) * direction;
     const lateralDelta = Math.abs(actor.y - currentCarrier.y);
-    let score = -Math.abs(forwardDelta) * .02 - lateralDelta * .01;
+    let score = -distance(actor,currentCarrier) * .065 - lateralDelta * .01;
 
     if (phase === "BUILDUP") {
       if (MIDFIELD_ROLES.has(actor.role)) score += 1.3;
@@ -364,15 +362,14 @@ export function createTacticalEngine(plan) {
 
   function selectReceiver(currentCarrier) {
     const candidates = actors
-      .filter((actor) => actor.team === currentCarrier.team && actor.role !== "GK")
+      .filter((actor) => actor.team === currentCarrier.team && actor.role !== "GK" && actor.actorId!==currentCarrier.actorId)
       .map((actor) => ({
         actor,
         score: receiverScore(actor, currentCarrier, attackingPhase),
       }))
       .sort((a, b) => b.score - a.score);
 
-    const top = candidates.slice(0, Math.min(4, candidates.length));
-    if (!top.length) return null;
+    if (!candidates.length) return null;
 
     const localRng = createPrng(
       sampleSeed(
@@ -383,7 +380,9 @@ export function createTacticalEngine(plan) {
         currentCarrier.actorId,
       ),
     );
-
+    const nearby=candidates.filter(({actor})=>distance(actor,currentCarrier)<30);
+    const pool=nearby.length && localRng()<.88 ? nearby : candidates;
+    const top=pool.slice(0,3);
     return top[Math.floor(localRng() * top.length)]?.actor || top[0].actor;
   }
 
@@ -398,68 +397,53 @@ export function createTacticalEngine(plan) {
     const receiver = selectReceiver(currentCarrier);
     if (!receiver) return;
 
-    const passDistance = distance(currentCarrier, receiver);
-    const forwardDelta =
-      (receiver.x - currentCarrier.x) * teams[possessionTeam].direction;
-    const duration = .56 + Math.min(.30, passDistance * .006);
-
-    animationController.play(currentCarrier.actorId, "PASS", {
-      duration: .34,
-      priority: 3,
-    });
-    animationController.play(receiver.actorId, "RECEIVE", {
-      duration: .42,
-      priority: 2,
-    });
-
-    if (
-      attackingPhase === "FINAL_THIRD"
-      && WIDE_ROLES.has(currentCarrier.role)
-      && Math.abs(receiver.y - currentCarrier.y) > 18
-    ) {
-      animationController.play(currentCarrier.actorId, "CROSS", {
-        duration: .46,
-        priority: 4,
-      });
-      ballController.cross(
-        {x: currentCarrier.x, y: currentCarrier.y},
-        {x: receiver.x, y: receiver.y},
-        {
-          targetActorId: receiver.actorId,
-          duration: Math.max(.68, duration),
-          maxHeight: 3.8,
-        },
-      );
-    } else if (
-      passDistance > 24
-      || (attackingPhase === "TRANSITION_ATTACK" && forwardDelta > 15)
-    ) {
-      animationController.play(currentCarrier.actorId, "LONG_PASS", {
-        duration: .44,
-        priority: 4,
-      });
-      ballController.longBall(
-        {x: currentCarrier.x, y: currentCarrier.y},
-        {x: receiver.x, y: receiver.y},
-        {
-          targetActorId: receiver.actorId,
-          duration: Math.max(.76, duration),
-          maxHeight: 4.4,
-        },
-      );
-    } else {
-      ballController.pass(
-        {x: currentCarrier.x, y: currentCarrier.y},
-        {x: receiver.x, y: receiver.y},
-        {
-          targetActorId: receiver.actorId,
-          duration,
-          maxHeight: .22,
-        },
-      );
-    }
-
+    launchPass(receiver);
     receiver.supportTarget = currentCarrier.actorId;
+  }
+
+  function launchPass(receiver) {
+    const direction=teams[receiver.team].direction;
+    const phase=(direction>0?ball.x:100-ball.x)>=72?'FINAL_THIRD':attackingPhase;
+    const profile=selectPassProfile(ball,receiver,{direction,phase});
+    const owner=actors.find(a=>a.actorId===ball.ownerActorId);
+    const methods={GROUND_PASS:'groundPass',DRIVEN_PASS:'drivenPass',LOFTED_PASS:'loftedPass',LONG_SWITCH:'longSwitch',CROSS:'cross'};
+    const animation=profile.kind==='CROSS'?'CROSS':['LOFTED_PASS','LONG_SWITCH'].includes(profile.kind)?'LONG_PASS':'PASS';
+    if(owner)animationController.play(owner.actorId,animation,{duration:.34,priority:4});
+    ballController[methods[profile.kind]]({...ball},profile.target,{...profile,targetActorId:receiver.actorId});
+    return profile.duration;
+  }
+
+  function beginAuthoritativeBuildup(payload={}) {
+    const side=payload.side==='away'?'away':'home',shooter=eventActor(side,payload.actorId);
+    if(!shooter)return 0;
+    if(pendingRestart){const restart=pendingRestart;pendingRestart=null;prepareSetPiece(restart.kind,{side:restart.side});}
+    // Finish a live flight first. The authorized event supplies identity, never staging coordinates.
+    const landing=ball.action?{...ball.action.to,ownerActorId:ball.action.targetActorId}:ball;
+    const route=planAuthoritativeAttack(landing,actors,{side,direction:teams[side].direction,shooterId:shooter.actorId});
+    const flight=ball.action?Math.max(0,ball.action.duration-ball.action.elapsed):0;
+    const duration=flight+route.reduce((sum,leg)=>sum+leg.duration+.18,0)+.25;
+    buildup={side,shooterId:shooter.actorId,route:route.map(leg=>leg.receiverId),ready:false,dwell:.12};
+    eventClock=0;eventOverrideUntil=duration+1;
+    if(!ball.action)advanceBuildup(0);
+    return duration;
+  }
+
+  function advanceBuildup(dt) {
+    if(!buildup||buildup.ready||ball.action)return;
+    buildup.dwell+=dt;
+    if(ball.ownerActorId===buildup.shooterId) { buildup.ready=true; return; }
+    if(buildup.dwell<.12&&ball.ownerActorId)return;
+    let next;
+    do { next=actors.find(a=>a.actorId===buildup.route.shift()); }
+    while(next?.actorId===ball.ownerActorId&&buildup.route.length);
+    if(!next)next=actors.find(a=>a.actorId===buildup.shooterId);
+    if(!next){cancelAuthoritativeBuildup();return;}
+    launchPass(next);buildup.dwell=0;
+  }
+
+  function cancelAuthoritativeBuildup() {
+    buildup=null;
+    eventOverrideUntil=eventClock;
   }
 
   function updateTeamStates(context) {
@@ -503,6 +487,7 @@ export function createTacticalEngine(plan) {
       );
 
       if (exact) return exact;
+      return null; // Never substitute another scorer for an unavailable named actor.
     }
 
     const team =
@@ -534,7 +519,7 @@ export function createTacticalEngine(plan) {
         actors, possessionTeam, attackingPhase,
         sampleSeed(plan.seed, "carrier-after-removal", phaseIndex, actorId),
       );
-      if (carrier && !ball.action) ballController.control(carrier.actorId);
+      // A removed owner leaves a loose ball for the nearest player to recover.
     }
     return removed;
   }
@@ -651,7 +636,7 @@ export function createTacticalEngine(plan) {
     const outfield = actors.filter(
       (actor) => actor.team === side && actor.role !== "GK",
     );
-    const kicker = outfield.find(
+    const kicker = (kind==='goal_kick'?actors.find(a=>a.team===side&&a.role==='GK'):null) || outfield.find(
       (actor) => ATTACK_ROLES.has(actor.role) || WIDE_ROLES.has(actor.role),
     ) || outfield[0] || null;
 
@@ -660,7 +645,11 @@ export function createTacticalEngine(plan) {
     let x = Number(visual.ball_start?.[0] ?? (direction > 0 ? 62 : 38));
     let y = Number(visual.ball_start?.[1] ?? 50);
 
-    if (kind === "penalty") {
+    if (kind === "restart") {
+      x=50;y=50;
+    } else if (kind === "goal_kick") {
+      x=direction>0?6:94;y=50;
+    } else if (kind === "penalty") {
       x = direction > 0 ? 88 : 12;
       y = 50;
     } else if (kind === "corner") {
@@ -797,16 +786,9 @@ export function createTacticalEngine(plan) {
       duration: .48,
       priority: 5,
     });
-    ballController.pass(
-      {x, y},
-      {x: receiver.x, y: receiver.y},
-      {
-        targetActorId: receiver.actorId,
-        duration: .44,
-      },
-    );
-    eventOverrideUntil = .54;
-    return .44;
+    const duration=launchPass(receiver);
+    eventOverrideUntil = duration+.1;
+    return duration;
   }
 
   function beginAuthoritativeEvent(
@@ -826,16 +808,8 @@ export function createTacticalEngine(plan) {
 
     possessionTeam = side;
 
-    const start =
-      Array.isArray(payload.ballStart)
-        ? {
-            x: Number(payload.ballStart[0]),
-            y: Number(payload.ballStart[1]),
-          }
-        : {
-            x: actor.x,
-            y: actor.y,
-          };
+    const start = {...ball};
+    buildup = null;
 
     const target =
       Array.isArray(payload.ballTarget)
@@ -851,9 +825,7 @@ export function createTacticalEngine(plan) {
             y: 50,
           };
 
-    // Revealed shot staging is a broadcast cut; outcome stays server-owned.
-    if (teams[side].direction < 0 && start.x > 50) { start.x = 100-start.x; target.x = 100-target.x; }
-    if (teams[side].direction > 0 && start.x < 50) { start.x = 100-start.x; target.x = 100-target.x; }
+    // Only the outcome/identity are authoritative; never relocate the live scene.
     const direction = teams[side].direction;
     if (payload.outcome === "GOAL") { target.x = direction > 0 ? 101 : -1; target.y = clamp(target.y,46,54); }
     if (payload.outcome === "MISS") { target.x = direction > 0 ? 103 : -3; target.y = target.y < 50 ? 42 : 58; }
@@ -861,8 +833,6 @@ export function createTacticalEngine(plan) {
       const goalie = keeperForAttackingSide(side);
       if (goalie) { target.x = goalie.x; target.y = goalie.y; }
     }
-    actor.x = start.x;
-    actor.y = start.y;
     actor.heading = Math.atan2(target.y-start.y,target.x-start.x);
     actor.vx = 0;
     actor.vy = 0;
@@ -917,6 +887,8 @@ export function createTacticalEngine(plan) {
       payload.outcome === "GOAL"
         ? 1.2
         : .9;
+    pendingRestart = payload.outcome === 'GOAL' ? {kind:'restart',side:side==='home'?'away':'home'}
+      : payload.outcome === 'MISS' ? {kind:'goal_kick',side:side==='home'?'away':'home'} : null;
 
     return duration;
   }
@@ -1003,6 +975,13 @@ export function createTacticalEngine(plan) {
 
   function baseTarget(actor) {
     const state = teams[actor.team];
+    // Receivers meet the committed flight endpoint; ready shooters retain their touch.
+    if(ball.action?.targetActorId===actor.actorId)return ball.action.to;
+    if(buildup?.ready&&buildup.shooterId===actor.actorId)return {x:actor.x,y:actor.y};
+    if(!ball.action&&!ball.ownerActorId&&!pendingRestart&&!buildup){
+      const nearest=actors.filter(a=>a.role!=='GK').sort((a,b)=>distance(a,ball)-distance(b,ball))[0];
+      if(nearest===actor)return {x:ball.x,y:ball.y};
+    }
 
     const possessionXShift = state.direction * (
       state.possession
@@ -1038,6 +1017,10 @@ export function createTacticalEngine(plan) {
       const ownGoalX = state.direction > 0 ? 5 : 95;
       x = ownGoalX + state.direction * clamp(Math.abs(ball.x - ownGoalX) * .06, 1, 7);
       y = 50 + (ball.y - 50) * .16;
+    } else if(ball.ownerActorId===actor.actorId && state.possession && !buildup) {
+      x=actor.x+state.direction*5;
+      y=actor.y+(50-actor.y)*.08;
+      intent="carry";
     }
 
     actor.tacticalIntent = intent;
@@ -1049,14 +1032,21 @@ export function createTacticalEngine(plan) {
   }
 
   function updateBall(dt) {
+    const oldOwner=ball.ownerActorId;
     ballController.update(dt, actors);
+    if(!ball.action&&!ball.ownerActorId&&!pendingRestart&&!buildup&&eventClock>=eventOverrideUntil){
+      const recovery=actors.find(a=>distance(a,ball)<1.1);
+      if(recovery)ballController.control(recovery.actorId);
+    }
 
     const newOwner = ball.ownerActorId
       ? actors.find((actor) => actor.actorId === ball.ownerActorId)
       : null;
 
-    if (newOwner && newOwner.team === possessionTeam) {
+    if (newOwner) {
+      if(newOwner.team!==possessionTeam){possessionTeam=newOwner.team;attackingPhase="TRANSITION_ATTACK";phaseElapsed=0;}
       carrier = newOwner;
+      if(oldOwner!==newOwner.actorId)animationController.play(newOwner.actorId,"RECEIVE",{duration:.2,priority:2});
     }
   }
 
@@ -1067,12 +1057,17 @@ export function createTacticalEngine(plan) {
     eventClock += dt;
     animationController.update(dt);
 
-    if (phaseElapsed >= phaseDuration && eventClock >= eventOverrideUntil) {
+    if (pendingRestart && eventClock>=eventOverrideUntil && !ball.action) {
+      const restart=pendingRestart;pendingRestart=null;
+      prepareSetPiece(restart.kind,{side:restart.side});
+    }
+    if (phaseElapsed >= phaseDuration && eventClock >= eventOverrideUntil && !ball.action && !buildup) {
       resetPhase();
     }
 
     if (
       eventClock >= eventOverrideUntil
+      && !buildup
       && passClock >= nextPassAt
       && !ball.action
       && ball.ownerActorId
@@ -1138,6 +1133,7 @@ export function createTacticalEngine(plan) {
       b.x=clamp(b.x+dx/d*push/1.05,0,100);b.y=clamp(b.y+dy/d*push/.68,0,100);
     }
     updateBall(dt);
+    advanceBuildup(dt);
 
     return {
       actors,
@@ -1146,6 +1142,7 @@ export function createTacticalEngine(plan) {
       possessionTeam,
       phase: attackingPhase,
       phaseIndex,
+      presentationFocus: currentPresentationFocus(ball,actors),
     };
   }
 
@@ -1157,6 +1154,9 @@ export function createTacticalEngine(plan) {
     reshapeForRedCard,
     prepareSetPiece,
     beginAuthoritativeEvent,
+    beginAuthoritativeBuildup,
+    isAuthoritativeBuildupReady: () => Boolean(buildup?.ready),
+    cancelAuthoritativeBuildup,
     playKeeperAction,
     celebrate(side) {
       for (const actor of actors.filter(a=>a.team===side&&a.role!=="GK")) animationController.play(actor.actorId,"CELEBRATE",{duration:.7,priority:10});
@@ -1169,6 +1169,7 @@ export function createTacticalEngine(plan) {
         possessionTeam,
         phase: attackingPhase,
         phaseIndex,
+        presentationFocus: currentPresentationFocus(ball,actors),
       };
     },
   };
