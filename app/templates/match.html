@@ -6,11 +6,14 @@
 <link rel="stylesheet" href="{{ url_for('static', filename='match/match.css', v='2.0.0') }}">
 <link rel="stylesheet"
       href="{{ url_for('static', filename='match/stadium-3d-poc.css', v='2.0.0') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='match/cockpit.css', v='2.0.0') }}">
+<script src="{{ url_for('static', filename='match/cockpit.js', v='2.0.0') }}"></script>
 {% endblock %}
 {% block scripts_extra %}
 <script type="module" src="{{ url_for('static', filename='match/bootstrap.js', v='2.0.0') }}"></script>
 {% endblock %}
 {% block content %}
+<script type="application/json" id="cockpit-data">{{ cockpit|tojson }}</script>
 <section class="match-stage" id="match-stage"
   data-session-id="{{ session.public_id }}"
   data-session-status="{{ session.status }}"
@@ -20,22 +23,23 @@
   data-complete-endpoint="{{ url_for('main.complete_match_api', session_id=session.public_id) }}"
   data-visual-endpoint="{{ url_for('main.match_visual_plan_api', session_id=session.public_id) }}">
   <div class="match-stage-top">
-    <span class="live-badge"><i></i> SEALED MATCH REPLAY</span>
+    <span class="live-badge"><i></i> MATCH CENTRE</span>
     <div class="match-clock"><strong id="match-minute">00'</strong><span id="match-status">Preparing</span></div>
     <div class="speed-controls" aria-label="Replay speed">
-      <button type="button" data-match-speed="1" class="active">1×</button>
-      <button type="button" data-match-speed="2">2×</button>
-      <button type="button" data-match-speed="4">4×</button>
+      <button type="button" data-match-speed="1" class="active" aria-pressed="true">1×</button>
+      <button type="button" data-match-speed="2" aria-pressed="false">2×</button>
+      <button type="button" data-match-speed="4" aria-pressed="false">4×</button>
     </div>
   </div>
 
   <div class="stadium-scoreboard">
-    <div class="team-side"><span class="club-monogram">{{ session.home_name[:2]|upper }}</span><h1>{{ session.home_name }}</h1></div>
+    <div class="team-side"><span class="club-monogram">{{ session.home_name[:2]|upper }}</span><div><small>HOME</small><h1>{{ session.home_name }}</h1></div></div>
     <div class="score-centre"><strong><span id="home-live-score">0</span><b>–</b><span id="away-live-score">0</span></strong><small id="score-caption">LIVE SCORE</small></div>
-    <div class="team-side away"><span class="club-monogram">{{ session.away_name[:2]|upper }}</span><h1>{{ session.away_name }}</h1></div>
+    <div class="team-side away"><span class="club-monogram">{{ session.away_name[:2]|upper }}</span><div><small>AWAY</small><h1>{{ session.away_name }}</h1></div></div>
   </div>
 
-
+  <div class="cockpit-toolbar">
+    <a class="cockpit-home" href="{{ url_for('main.index') }}" aria-label="Return to career dashboard">← Career</a>
     <div class="match-view-switcher" id="match-view-switcher" hidden>
     <button type="button"
             data-match-view-target="3d"
@@ -53,7 +57,15 @@
   <label class="match-camera-control">Camera
     <select id="match-camera-mode"><option value="broadcast">Broadcast</option><option value="wide">Whole pitch</option></select>
   </label>
-  <div class="match-broadcast">
+  <div class="match-controls">
+    <button type="button" class="button secondary" id="pause-replay">Pause <kbd>Space</kbd></button>
+    <button type="button" class="button secondary skip-next-event" id="skip-next-event">Next event <kbd>N</kbd></button>
+    <button type="button" class="button secondary match-audio-toggle" id="match-audio-toggle" aria-pressed="false">Audio off</button>
+    <button type="button" class="button secondary" id="finish-replay">Full time <kbd>Enter</kbd></button>
+  </div>
+  <button type="button" id="open-match-report" title="Final score, rating, development, rewards and analysis stay locked until full time" disabled>Report · locked</button>
+  </div>
+  <div class="match-broadcast" id="match-broadcast">
   <div class="match-3d-shell"
        id="match-3d-shell"
        data-model-src="{{ url_for('static', filename='match/assets/footy-match-stadium-v1.glb', v='2') }}"
@@ -103,8 +115,6 @@
         <span>MATCH STATE</span>
         <strong id="match-transition-text">HALF TIME</strong>
       </div>
-  </div>
-
 <div class="match-live-indicators" aria-label="Live match indicators">
     <div class="match-live-indicator">
       <span>REVEALED SHOTS</span>
@@ -126,19 +136,15 @@
       <small>PRESENTATION</small>
     </div>
   </div>
-
-  <div class="match-controls">
-    <button type="button" class="button secondary" id="pause-replay">Pause <kbd>Space</kbd></button>
-    <button type="button" class="button secondary skip-next-event" id="skip-next-event">Next major event <kbd>N</kbd></button>
-    <button type="button" class="button secondary match-audio-toggle" id="match-audio-toggle" aria-pressed="false">Audio off</button>
-    <button type="button" class="button secondary" id="finish-replay">Skip to full time <kbd>Enter</kbd></button>
   </div>
 </section>
 
 <div class="match-layout">
   <section class="panel commentary-panel">
-    <div class="panel-heading"><div><p class="eyebrow">LIVE COMMENTARY</p><h2>The event ledger</h2></div><span class="event-count" id="event-count">0 / {{ session.event_count }}</span></div>
-    <div class="timeline" id="match-timeline" aria-live="polite"></div>
+    <div class="panel-heading"><div><p class="eyebrow">LIVE COMMENTARY</p><h2>Match feed</h2></div><span class="event-count" id="event-count">0 / {{ session.event_count }}</span></div>
+    <div id="cockpit-latest" role="status" aria-live="polite" aria-atomic="true"><strong id="cockpit-latest-type">READY FOR KICK OFF</strong><p id="cockpit-latest-text">Your player is marked in gold on the pitch.</p></div>
+    <div class="timeline" id="match-timeline" role="region" aria-label="Revealed commentary history" tabindex="0"></div>
+    <button type="button" id="jump-to-live" hidden>Jump to live</button>
   </section>
 
   <aside
@@ -156,7 +162,7 @@
         <h2>{{ session.player_name }}</h2>
         <div class="live-player-focus__tags">
           <span>{{ session.position }}</span>
-          <span>#17</span>
+          <span>#{{ cockpit.player.shirt_number if cockpit.player.shirt_number is not none else '—' }}</span>
           <strong id="live-player-state" aria-live="polite">
             {% if session.selection_status == "starter" %}
               STARTING
@@ -167,10 +173,12 @@
             {% endif %}
           </strong>
         </div>
+        <p id="live-player-timing">{{ 'Starter' if session.selection_status == 'starter' else 'Bench / unavailable' }}</p>
       </div>
     </div>
 
     <div class="live-player-focus__metrics" aria-label="Revealed player match facts">
+      <div><span>MINUTES</span><strong id="live-player-minutes">0′</strong></div>
       <div>
         <span>FITNESS</span>
         <strong id="live-player-fitness">{{ career.fitness }}%</strong>
@@ -187,6 +195,7 @@
         <span>CARDS</span>
         <strong id="live-player-cards">0Y / 0R</strong>
       </div>
+      <div><span>RATING</span><strong id="live-player-rating" title="Released at full time">—</strong></div>
     </div>
 
     <p class="live-player-focus__safe-note">
@@ -195,15 +204,18 @@
     </p>
   </aside>
 </div>
-
-<section class="panel report-lock" id="report-lock">
-  <div class="lock-icon">90</div>
-  <div>
-    <p class="eyebrow">POST-MATCH INTELLIGENCE</p>
-    <h2>Report locked until full time</h2>
-    <p>Final score, rating, development, rewards and analysis stay locked until full time. The server releases the post-match report only after the match is completed.</p>
+<section class="panel cockpit-squads" aria-label="Match squads">
+  <div role="tablist" aria-label="Match squads" id="squad-tabs">
+    <button type="button" role="tab" id="tab-own" aria-controls="squad-own" aria-selected="true">Our XI</button>
+    <button type="button" role="tab" id="tab-bench" aria-controls="squad-bench" aria-selected="false" tabindex="-1">Bench</button>
+    <button type="button" role="tab" id="tab-opponent" aria-controls="squad-opponent" aria-selected="false" tabindex="-1">Opponent XI</button>
   </div>
+  <div role="tabpanel" id="squad-own" aria-labelledby="tab-own" tabindex="0"><ul></ul><p>Starting match XI · gold marks your player.</p></div>
+  <div role="tabpanel" id="squad-bench" aria-labelledby="tab-bench" tabindex="0" hidden><ul></ul><p>Only your player's bench selection is recorded. A full substitute roster is unavailable.</p></div>
+  <div role="tabpanel" id="squad-opponent" aria-labelledby="tab-opponent" tabindex="0" hidden><ul></ul><p>Opponent starting match XI.</p></div>
 </section>
-
-<div id="post-match-mount" aria-live="polite"></div>
+<dialog id="match-report-dialog" aria-labelledby="match-report-title">
+  <header><h2 id="match-report-title">Full-time report</h2><button type="button" id="close-match-report" autofocus>Close report ✕</button></header>
+  <div id="post-match-mount"></div>
+</dialog>
 {% endblock %}

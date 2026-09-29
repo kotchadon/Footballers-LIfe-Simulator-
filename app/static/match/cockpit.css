@@ -1,0 +1,143 @@
+/* Match-only workspace: the canvas owns the flexible row, never the document. */
+body[data-page="match"] {overflow:hidden; background:#090f18;}
+body[data-page="match"] .sidebar,
+body[data-page="match"] .career-hud,
+body[data-page="match"] .mobile-bar {display:none;}
+body[data-page="match"] .app-shell {display:block; min-height:0;}
+body[data-page="match"] .main-column {margin:0; min-width:0;}
+body[data-page="match"] main.container {
+  width:100%; max-width:none; margin:0; padding:12px; height:100vh; height:100dvh;
+  display:grid; gap:10px; grid-template-columns:minmax(0,1fr) clamp(290px,25vw,370px);
+  grid-template-rows:72px auto minmax(0,1fr) 154px;
+  grid-template-areas:"score clock" "toolbar toolbar" "pitch commentary" "player squads";
+}
+body[data-page="match"] main.container > script {display:none;}
+body[data-page="match"] main.container > .flash {position:fixed; top:95px; left:20px; right:20px; z-index:20;}
+body[data-page="match"] .panel h2::after {display:none;}
+body[data-page="match"] .match-stage, body[data-page="match"] .match-layout {display:contents;}
+body[data-page="match"] .stadium-scoreboard {grid-area:score; display:grid; grid-template-columns:minmax(0,1fr) auto minmax(0,1fr); align-items:center; gap:16px; padding:10px 18px; margin:0; min-height:0; border:1px solid #2b3b50; background:#101c2b;}
+body[data-page="match"] .stadium-scoreboard::after {display:none;}
+body[data-page="match"] .score-centre {min-width:0;}
+body[data-page="match"] .team-side {display:flex; align-items:center; gap:10px; min-width:0; text-align:left;}
+body[data-page="match"] .team-side.away {flex-direction:row-reverse; text-align:right;}
+body[data-page="match"] .team-side h1 {font-size:clamp(14px,1.3vw,21px); line-height:1.2; margin:2px 0 0; overflow-wrap:anywhere;}
+body[data-page="match"] .team-side small {font-size:10px; letter-spacing:.14em; color:#a6b6cc;}
+body[data-page="match"] .club-monogram {width:38px; height:38px; min-width:38px; font-size:14px; border-radius:6px;}
+body[data-page="match"] .score-centre > strong {font-size:32px; line-height:1; display:flex; gap:12px;}
+body[data-page="match"] .score-centre small {font-size:9px; margin-top:4px; letter-spacing:.14em;}
+body[data-page="match"] .match-stage-top {grid-area:clock; display:grid; grid-template-columns:1fr auto; gap:2px 8px; padding:8px 12px; margin:0; background:#101c2b; border:1px solid #2b3b50;}
+body[data-page="match"] .live-badge {grid-column:1; font-size:9px; padding:0;}
+body[data-page="match"] .match-clock {grid-column:1; grid-row:2; display:flex; align-items:center; gap:8px;}
+body[data-page="match"] .match-clock strong {font-size:25px;}
+body[data-page="match"] .match-clock span {font-size:11px;}
+body[data-page="match"] .speed-controls {grid-column:2; grid-row:1/3; align-self:center; display:flex; gap:4px;}
+body[data-page="match"] .speed-controls button {min-width:30px; padding:8px 5px;}
+.cockpit-toolbar {grid-area:toolbar; display:flex; flex-wrap:wrap; align-items:center; gap:8px; min-width:0;}
+.cockpit-home {color:#c4d2e7; font-size:12px; white-space:nowrap; padding:9px 5px;}
+body[data-page="match"] .match-view-switcher {margin:0; gap:4px; flex-wrap:nowrap;}
+body[data-page="match"] .match-view-switcher button,
+body[data-page="match"] .match-controls button,
+.cockpit-toolbar > button {font:600 12px/1.2 "Trebuchet MS",sans-serif; padding:9px 10px; min-height:34px; border:1px solid #415369; background:#172536; color:#ecf3ff; border-radius:5px; white-space:nowrap; cursor:pointer;}
+body[data-page="match"] .match-view-switcher button.active {background:#e2c776; color:#141b23; border-color:#e2c776;}
+body[data-page="match"] button:disabled {opacity:.5; cursor:default;}
+body[data-page="match"] button:focus-visible, body[data-page="match"] a:focus-visible, body[data-page="match"] [tabindex]:focus-visible {outline:2px solid #f1d27c; outline-offset:2px;}
+body[data-page="match"] .match-3d-status {font-size:10px; max-width:130px; line-height:1.2;}
+body[data-page="match"] .match-camera-control {margin:0; font-size:11px; gap:4px;}
+body[data-page="match"] .match-camera-control select {width:auto; min-height:34px; font-size:12px;}
+body[data-page="match"] .match-controls {display:flex; gap:4px; margin:0 0 0 auto; padding:0;}
+body[data-page="match"] .match-controls kbd {display:none;}
+body[data-page="match"] .match-broadcast {grid-area:pitch; min-height:0; min-width:0; border:1px solid #31473f; border-radius:8px;}
+body[data-page="match"] .match-3d-shell, body[data-page="match"] .match-visual-shell, body[data-page="match"] .match-visual-stage {width:100%; height:100%; min-height:0; aspect-ratio:auto; padding:0; margin:0; border:0;}
+body[data-page="match"] .match-visual-legend {position:absolute; bottom:8px; right:10px; z-index:3; padding:5px; background:#081624dd; gap:8px; font-size:9px;}
+body[data-page="match"] .match-live-indicators {position:absolute; top:8px; left:8px; z-index:3; display:flex; gap:12px; padding:6px 10px; margin:0; background:#081624dd; border:1px solid #39514c; border-radius:5px; pointer-events:none;}
+body[data-page="match"] .match-live-indicator {padding:0; min-height:0; background:none; border:0; display:flex; gap:6px; align-items:center;}
+body[data-page="match"] .match-live-indicator > span {font-size:9px;}
+body[data-page="match"] .match-live-indicator strong {font-size:11px; margin:0;}
+body[data-page="match"] .match-live-indicator small {display:none;}
+body[data-page="match"] .panel {margin:0; min-height:0; min-width:0; border:1px solid #2b3b50; border-radius:8px; background:#101c2b; box-shadow:none;}
+body[data-page="match"] .commentary-panel {grid-area:commentary; display:flex; flex-direction:column; padding:12px; overflow:hidden; position:relative;}
+body[data-page="match"] .panel-heading {margin:0 0 10px; padding:0; gap:8px; flex-direction:row;}
+body[data-page="match"] .panel-heading h2 {font-size:18px; margin:2px 0 0;}
+body[data-page="match"] .eyebrow {font-size:9px; margin:0 0 4px; letter-spacing:.13em;}
+body[data-page="match"] .event-count {font-size:10px; white-space:nowrap; padding:4px;}
+#cockpit-latest {padding:11px; border-left:3px solid #e2c776; background:#1b2c3e; margin-bottom:10px; flex:none;}
+#cockpit-latest strong {font-size:10px; letter-spacing:.09em; color:#eed68e;}
+#cockpit-latest p {margin:6px 0 0; font-size:13px; line-height:1.45; color:#f1f5fc;}
+body[data-page="match"] #match-timeline {flex:1; min-height:0; max-height:none; overflow:auto; overscroll-behavior:contain; overflow-anchor:none; padding:0 4px 0 0; scroll-behavior:auto;}
+body[data-page="match"] .timeline-event {display:grid; grid-template-columns:30px minmax(0,1fr); gap:8px; padding:10px 7px; margin:0 0 5px; background:#0c1623; border:1px solid #233349; border-radius:5px;}
+body[data-page="match"] .timeline-event > strong {font-size:12px; color:#adc3db; padding:0;}
+body[data-page="match"] .timeline-event > strong::after {display:none;}
+body[data-page="match"] .timeline-event p {font-size:12px; line-height:1.45; margin:0; padding:0; border:0; color:#d5e1ef;}
+.commentary-type {display:block; margin-bottom:4px; font-size:9px; letter-spacing:.08em; font-weight:700; color:#9dafc5;}
+body[data-page="match"] .timeline-event.is-career-event {border-left:3px solid #e2c776!important; background:#292b29!important;}
+#jump-to-live {flex:none; padding:8px; margin-top:7px; border:1px solid #e2c776; background:#e2c776; color:#101824; border-radius:4px; font-weight:700;}
+body[data-page="match"] #player-briefing {grid-area:player; display:grid; grid-template-columns:minmax(200px,1fr) minmax(280px,1.4fr); gap:8px 16px; align-content:center; padding:12px 16px; border-top:2px solid #e2c776;}
+body[data-page="match"] .live-player-focus__identity {display:flex; gap:12px; align-items:center; margin:0;}
+body[data-page="match"] .live-player-focus__portrait {width:64px; height:80px; flex:0 0 64px; margin:0;}
+body[data-page="match"] .live-player-focus__portrait .player-visual {width:64px; height:80px; min-height:0;}
+body[data-page="match"] .live-player-focus__copy h2 {font-size:19px; line-height:1.2; margin:0 0 6px;}
+body[data-page="match"] .live-player-focus__tags {gap:5px; flex-wrap:wrap;}
+body[data-page="match"] .live-player-focus__tags > * {font-size:9px; padding:3px 5px;}
+#live-player-timing {margin:6px 0 0; font-size:11px; color:#afc2d9;}
+body[data-page="match"] .live-player-focus__metrics {display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:5px; margin:0; align-self:center;}
+body[data-page="match"] .live-player-focus__metrics > div {padding:10px 3px; text-align:center; min-width:0; background:#0b1624; border:1px solid #27394f;}
+body[data-page="match"] .live-player-focus__metrics span {font-size:8px; letter-spacing:.05em;}
+body[data-page="match"] .live-player-focus__metrics strong {font-size:17px; white-space:nowrap;}
+body[data-page="match"] .live-player-focus__safe-note {grid-column:1/-1; font-size:10px; margin:0; color:#9bb0c8;}
+.cockpit-squads {grid-area:squads; display:flex; flex-direction:column; padding:8px 10px; overflow:hidden;}
+#squad-tabs {display:flex; flex:none; gap:4px; border-bottom:1px solid #34445a; padding-bottom:6px;}
+#squad-tabs button {flex:1; font-size:11px; padding:6px 3px; color:#b5c6da; border:0; background:transparent; border-radius:4px; cursor:pointer;}
+#squad-tabs button[aria-selected="true"] {background:#304357; color:#fff;}
+.cockpit-squads [role="tabpanel"] {overflow:auto; min-height:0; overscroll-behavior:contain; padding-top:4px;}
+.cockpit-squads ul {padding:0; margin:0; list-style:none;}
+.cockpit-squads li {display:grid; grid-template-columns:23px minmax(0,1fr) 30px; gap:5px; align-items:center; padding:6px 4px; border-bottom:1px solid #26374b; font-size:11px;}
+.cockpit-squads li strong {font-weight:500;}
+.cockpit-squads li small {grid-column:2/-1; font-size:9px;}
+.cockpit-squads li.is-career-player {color:#f1d587; background:#342f23; border-left:2px solid #e2c776;}
+.cockpit-squads p {font-size:11px; line-height:1.4; color:#a6b8cf; margin:8px 3px;}
+#match-report-dialog {width:min(1060px,94vw); max-height:90dvh; border:1px solid #526781; border-radius:10px; padding:18px; background:#0b1522; color:#eef4ff; overflow:auto;}
+#match-report-dialog::backdrop {background:#03080ec9; backdrop-filter:blur(5px);}
+#match-report-dialog > header {position:sticky; top:-18px; z-index:5; display:flex; align-items:center; justify-content:space-between; gap:12px; background:#0b1522; padding:12px 0;}
+#match-report-dialog > header h2 {font-size:20px; margin:0;}
+#close-match-report {padding:10px; background:#273b51; color:#fff; border:1px solid #526781; border-radius:4px;}
+#match-report-dialog .panel {padding:18px; margin-bottom:12px;}
+@media(max-width:1100px) {
+  body[data-page="match"] .match-3d-status {max-width:95px;}
+  body[data-page="match"] #player-briefing {grid-template-columns:1fr; padding:8px 12px; gap:5px;}
+  body[data-page="match"] .live-player-focus__portrait {width:38px; height:42px; flex-basis:38px;}
+  body[data-page="match"] .live-player-focus__portrait .player-visual {width:38px; height:42px;}
+  body[data-page="match"] .live-player-focus__copy h2 {font-size:16px; display:inline; margin-right:8px;}
+  body[data-page="match"] .live-player-focus__copy .eyebrow, body[data-page="match"] .live-player-focus__safe-note {display:none;}
+  body[data-page="match"] .live-player-focus__metrics > div {padding:4px;}
+}
+@media(max-width:850px) {
+  body[data-page="match"] main.container {padding:6px; gap:6px; grid-template-columns:minmax(0,1fr) minmax(150px,.65fr); grid-template-rows:58px 40px auto minmax(140px,1fr) 116px minmax(150px,.8fr); grid-template-areas:"score score" "clock clock" "toolbar toolbar" "pitch pitch" "player player" "commentary squads";}
+  body[data-page="match"] .stadium-scoreboard {padding:6px; gap:5px;}
+  body[data-page="match"] .club-monogram, body[data-page="match"] .live-badge {display:none;}
+  body[data-page="match"] .team-side h1 {font-size:12px;}
+  body[data-page="match"] .score-centre > strong {font-size:23px; gap:5px;}
+  body[data-page="match"] .match-stage-top {padding:5px; gap:3px;}
+  body[data-page="match"] .match-clock {grid-row:1/3; display:flex;}
+  body[data-page="match"] .match-clock span {display:block; font-size:9px;}
+  body[data-page="match"] .match-clock strong {font-size:20px;}
+  body[data-page="match"] .speed-controls {gap:1px;}
+  body[data-page="match"] .speed-controls button {min-width:24px; padding:7px 3px; font-size:11px;}
+  .cockpit-toolbar {gap:4px;}
+  body[data-page="match"] .match-controls {margin-left:0;}
+  body[data-page="match"] .match-controls button, body[data-page="match"] .match-view-switcher button, .cockpit-toolbar > button {font-size:10px; padding:7px; min-height:30px;}
+  body[data-page="match"] .match-3d-status {display:none;}
+  body[data-page="match"] .commentary-panel {padding:8px;}
+  body[data-page="match"] .panel-heading h2 {font-size:14px;}
+  body[data-page="match"] #cockpit-latest {padding:6px; margin-bottom:6px;}
+  #cockpit-latest p {font-size:11px; max-height:3em; overflow:auto;}
+  body[data-page="match"] .panel-heading {margin-bottom:5px;}
+  body[data-page="match"] .match-live-indicator > span {font-size:8px;}
+  body[data-page="match"] .match-live-indicators {gap:7px; padding:4px;}
+}
+@media(max-height:600px) and (max-width:850px) {
+  body[data-page="match"] {overflow:auto;}
+  body[data-page="match"] main.container {height:auto; min-height:100dvh; grid-template-rows:58px 40px auto 260px 116px 240px;}
+}
+@media(prefers-reduced-motion:reduce) {
+  body[data-page="match"] .timeline-event, body[data-page="match"] .live-player-focus {animation:none; transition:none; opacity:1; transform:none;}
+}

@@ -378,7 +378,9 @@ def test_final_review_replay_speed_contract_is_1_2_4_end_to_end():
     assert "const next = Number(nextSpeed)" in replay
     assert "speed = [1, 2, 4].includes(next) ? next : 1" in replay
     assert "Math.min(3" not in replay
-    assert 'speed === 4 ? "auto" : "smooth"' in replay
+    # Cockpit owns reader-aware following at every speed; full time never moves the page.
+    assert 'cockpit?.event(item, row)' in replay
+    assert 'reportMount.scrollIntoView' not in replay
     assert 'speed === 3 ? "auto" : "smooth"' not in replay
 
     assert 'if (["1", "2", "4"].includes(key)) {' in text

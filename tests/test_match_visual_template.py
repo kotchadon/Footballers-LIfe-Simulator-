@@ -375,7 +375,7 @@ def test_slice7_match_focus_reuses_v5_portrait_and_live_safe_fields():
     assert 'id="live-player-goals"' in source
     assert 'id="live-player-assists"' in source
     assert 'id="live-player-cards"' in source
-    assert "#17" in source
+    assert "cockpit.player.shirt_number" in source
     for status in ("STARTING", "BENCH", "NOT SELECTED"):
         assert status in source
 
@@ -386,7 +386,8 @@ def test_slice7_match_focus_reuses_v5_portrait_and_live_safe_fields():
     start = source.index('id="player-briefing"')
     end = source.index("</aside>", start)
     panel = source[start:end].lower()
-    assert "rating" not in panel
+    assert 'id="live-player-rating" title="released at full time">—</strong>' in panel
+    assert "session.rating" not in panel
 
 
 def test_slice7_match_route_builds_read_only_match_portrait_context():

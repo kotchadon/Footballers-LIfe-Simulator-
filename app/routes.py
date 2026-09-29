@@ -155,6 +155,8 @@ def play():
 
 @bp.get("/match/<session_id>")
 def match_centre(session_id):
+    from .match_cockpit import cockpit_context
+    from .services import get_match_visual_plan
     career, redirect_response = _active_or_new()
     if redirect_response:
         return redirect_response
@@ -166,6 +168,7 @@ def match_centre(session_id):
         "match.html",
         career=career,
         session=session,
+        cockpit=cockpit_context(get_match_visual_plan(session_id, career["id"])),
         player_visual_model=build_player_visual(
             career,
             selection_status=session["selection_status"],

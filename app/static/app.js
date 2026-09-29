@@ -439,6 +439,7 @@
     const stage = document.getElementById("match-stage");
     const timeline = document.getElementById("match-timeline");
     if (!stage || !timeline) return null;
+    const cockpit = window.FootyCockpit?.mount();
 
     const minute = document.getElementById("match-minute");
     const status = document.getElementById("match-status");
@@ -510,6 +511,7 @@
     function updateSpeedButtons() {
       document.querySelectorAll("[data-match-speed]").forEach((button) => {
         button.classList.toggle("active", Number(button.dataset.matchSpeed) === speed);
+        button.setAttribute("aria-pressed", String(Number(button.dataset.matchSpeed) === speed));
       });
     }
 
@@ -678,7 +680,7 @@ if (timeline.querySelector(`[data-sequence="${item.sequence}"]`)) return;
       row.append(stamp, copy);
       if (instant) row.style.animationDuration = "0s";
       timeline.append(row);
-      timeline.scrollTo({top: timeline.scrollHeight, behavior: instant || speed === 4 ? "auto" : "smooth"});
+      cockpit?.event(item, row);
 
       const mapped = mapScore(item.score);
       homeScore.textContent = mapped.home;
@@ -995,10 +997,10 @@ if (timeline.querySelector(`[data-sequence="${item.sequence}"]`)) return;
       minute.textContent = "FT";
       status.textContent = "Full time";
       scoreCaption.textContent = "FINAL SCORE";
-      reportLock.remove();
+      reportLock?.remove();
       reportMount.replaceChildren(buildReport(payload));
       initialiseVisualUI(reportMount);
-      reportMount.scrollIntoView({behavior: speed === 4 ? "auto" : "smooth", block: "start"});
+      cockpit?.finish(payload);
       pauseButton.textContent = "Replay complete";
       pauseButton.disabled = true;
       finishButton.disabled = true;
@@ -1227,13 +1229,14 @@ if (timeline.querySelector(`[data-sequence="${item.sequence}"]`)) return;
   }
 
   initialiseVisualUI(document);
-  restoreScroll();
+  if (page !== "match") restoreScroll();
   window.addEventListener("resize", () => { window.clearTimeout(window.__footyResize); window.__footyResize = window.setTimeout(() => drawCharts(document), 120); });
   document.addEventListener("submit", (event) => { if (!event.target.matches("form[data-live-form]")) saveScroll(); });
 
   const replay = page === "match" ? setupMatchReplay() : null;
 
   document.addEventListener("keydown", (event) => {
+    if (document.getElementById("match-report-dialog")?.open || event.target.closest?.('button, a, select, [role="tab"]')) return;
     if (event.metaKey || event.ctrlKey || event.altKey || event.repeat || isTypingTarget(event.target)) return;
     const key = event.key.toLowerCase();
 
